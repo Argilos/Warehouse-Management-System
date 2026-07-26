@@ -1,8 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
+  "buildCommand": "npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "cd backend && npm install && npx prisma generate --schema ../prisma/schema.prisma",
   "functions": {
     "api/index.ts": {
       "runtime": "nodejs20.x",
@@ -18,8 +17,5 @@
       "src": "/(.*)",
       "dest": "/frontend/dist/$1"
     }
-  ],
-  "env": {
-    "VERCEL": "1"
-  }
+  ]
 }

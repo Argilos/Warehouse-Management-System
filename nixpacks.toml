@@ -1,8 +1,8 @@
 [phases.install]
-cmds = ["cd backend && npm ci"]
+cmds = ["npm install", "cd backend && npm install"]
 
 [phases.build]
-cmds = ["cd backend && npm run build"]
+cmds = ["npx prisma generate --schema ./prisma/schema.prisma", "cd backend && npm run build"]
 
 [start]
 cmd = "node backend/dist/server.js"
