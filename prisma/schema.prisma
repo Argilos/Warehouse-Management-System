@@ -1,0 +1,347 @@
+// Enterprise Warehouse Asset and Employee Management System - Prisma Schema
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../backend/node_modules/.prisma/client"
+}
+
+enum Role {
+  ADMIN
+  WAREHOUSE_MANAGER
+  WAREHOUSE_EMPLOYEE
+  POWER_USER
+}
+
+enum AssetStatus {
+  AVAILABLE
+  ISSUED
+  IN_SERVICE
+  IN_CALIBRATION
+  RETIRED
+  DAMAGED
+  LOST
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
+enum ServiceStatus {
+  PENDING
+  SENT
+  IN_REPAIR
+  COMPLETED
+  CANCELLED
+}
+
+enum CalibrationResult {
+  PASS
+  FAIL
+  CONDITIONAL
+}
+
+enum TransactionType {
+  ISSUE
+  RETURN
+  TRANSFER
+  MAINTENANCE_SEND
+  MAINTENANCE_RETURN
+  CALIBRATION_SEND
+  CALIBRATION_RETURN
+  RETIREMENT
+  INVENTORY_CHECK
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  firstName String
+  lastName  String
+  role      Role     @default(WAREHOUSE_EMPLOYEE)
+  phone     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs        AuditLog[]
+  transactions     AssetTransaction[] @relation("PerformedBy")
+  inventoryChecks  InventoryCheck[]
+  documents        Document[]
+  notifications    Notification[]
+
+  @@map("users")
+}
+
+model Asset {
+  id               String      @id @default(uuid())
+  assetNumber      String      @unique
+  qrCode           String      @unique
+  barcode          String?
+  name             String
+  description      String?
+  category         String
+  manufacturer     String
+  model            String
+  serialNumber     String      @unique
+  status           AssetStatus @default(AVAILABLE)
+  location         String
+  purchaseDate     DateTime
+  purchasePrice    Float
+  currentValue     Float
+  depreciationRate Float       @default(5.0)
+  supplierId       String?
+  supplier         Supplier?   @relation(fields: [supplierId], references: [id])
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  transactions     AssetTransaction[]
+  employeeAssets   EmployeeAsset[]
+  serviceOrders    ServiceOrder[]
+  calibrations     CalibrationRecord[]
+  toolBoxItems     ToolBoxItem[]
+  inventoryItems   InventoryCheckItem[]
+  documents        Document[]
+
+  @@map("assets")
+}
+
+model Employee {
+  id               String         @id @default(uuid())
+  employeeNumber   String         @unique
+  firstName        String
+  lastName         String
+  email            String         @unique
+  phone            String
+  department       String
+  position         String
+  status           EmployeeStatus @default(ACTIVE)
+  hireDate         DateTime
+  terminationDate DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  employeeAssets   EmployeeAsset[]
+  toolBoxes        ToolBox[]
+  transactions     AssetTransaction[]
+
+  @@map("employees")
+}
+
+model AssetTransaction {
+  id              String          @id @default(uuid())
+  assetId         String
+  asset           Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  employeeId      String?
+  employee        Employee?       @relation(fields: [employeeId], references: [id])
+  transactionType TransactionType
+  transactionDate DateTime        @default(now())
+  returnDate      DateTime?
+  performedById   String
+  performedBy     User            @relation("PerformedBy", fields: [performedById], references: [id])
+  notes           String?
+  projectId       String?
+  project         Project?        @relation(fields: [projectId], references: [id])
+  createdAt       DateTime        @default(now())
+
+  @@map("asset_transactions")
+}
+
+model EmployeeAsset {
+  id             String    @id @default(uuid())
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  assetId        String
+  asset          Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assignmentType String    @default("TEMPORARY")
+  assignedDate   DateTime  @default(now())
+  returnedDate   DateTime?
+  condition      String    @default("EXCELLENT")
+  notes          String?
+
+  @@map("employee_assets")
+}
+
+model ToolBox {
+  id           String        @id @default(uuid())
+  boxNumber    String        @unique
+  name         String
+  employeeId   String?
+  employee     Employee?     @relation(fields: [employeeId], references: [id])
+  status       String        @default("ASSIGNED")
+  assignedDate DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  items        ToolBoxItem[]
+
+  @@map("tool_boxes")
+}
+
+model ToolBoxItem {
+  id        String   @id @default(uuid())
+  toolBoxId String
+  toolBox   ToolBox  @relation(fields: [toolBoxId], references: [id], onDelete: Cascade)
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@map("tool_box_items")
+}
+
+model ServiceOrder {
+  id                 String        @id @default(uuid())
+  assetId            String
+  asset              Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  supplierId         String?
+  supplier           Supplier?     @relation(fields: [supplierId], references: [id])
+  problemDescription String
+  sentDate           DateTime      @default(now())
+  receivedDate       DateTime?
+  repairCost         Float?        @default(0.0)
+  replacedParts      String?
+  status             ServiceStatus @default(PENDING)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@map("service_orders")
+}
+
+model CalibrationRecord {
+  id                  String            @id @default(uuid())
+  assetId             String
+  asset               Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  providerId          String?
+  provider            Supplier?         @relation(fields: [providerId], references: [id])
+  calibrationDate     DateTime
+  nextCalibrationDate DateTime
+  certificateNumber   String
+  result              CalibrationResult @default(PASS)
+  documentUrl         String?
+  notes               String?
+  createdAt           DateTime          @default(now())
+
+  @@map("calibration_records")
+}
+
+model Supplier {
+  id            String   @id @default(uuid())
+  companyName   String
+  contactPerson String
+  phone         String
+  email         String
+  address       String
+  services      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  assets        Asset[]
+  serviceOrders ServiceOrder[]
+  calibrations  CalibrationRecord[]
+
+  @@map("suppliers")
+}
+
+model Project {
+  id           String             @id @default(uuid())
+  projectCode  String             @unique
+  name         String
+  client       String
+  department   String
+  status       String             @default("ACTIVE")
+  startDate    DateTime
+  endDate      DateTime?
+  location     String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  transactions AssetTransaction[]
+
+  @@map("projects")
+}
+
+model InventoryCheck {
+  id             String               @id @default(uuid())
+  checkNumber    String               @unique
+  title          String
+  performedById  String
+  performedBy    User                 @relation(fields: [performedById], references: [id])
+  checkDate      DateTime             @default(now())
+  status         String               @default("IN_PROGRESS")
+  totalAssets    Int                  @default(0)
+  verifiedAssets Int                  @default(0)
+  missingAssets  Int                  @default(0)
+  damagedAssets  Int                  @default(0)
+  notes          String?
+  createdAt      DateTime             @default(now())
+
+  items          InventoryCheckItem[]
+
+  @@map("inventory_checks")
+}
+
+model InventoryCheckItem {
+  id               String         @id @default(uuid())
+  inventoryCheckId String
+  inventoryCheck   InventoryCheck @relation(fields: [inventoryCheckId], references: [id], onDelete: Cascade)
+  assetId          String
+  asset            Asset          @relation(fields: [assetId], references: [id])
+  verified         Boolean        @default(false)
+  condition        String         @default("GOOD")
+  notes            String?
+  scannedAt        DateTime?
+
+  @@map("inventory_check_items")
+}
+
+model Document {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String
+  fileName   String
+  filePath   String
+  fileSize   Int?
+  mimeType   String?
+  uploadedBy String
+  uploader   User     @relation(fields: [uploadedBy], references: [id])
+  assetId    String?
+  asset      Asset?   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@map("documents")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  entity    String
+  entityId  String
+  action    String
+  oldValues Json?
+  newValues Json?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
