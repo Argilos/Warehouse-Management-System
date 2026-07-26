@@ -40,6 +40,9 @@ Thumbs.db
 # Keep schema.prisma but ignore generated client
 # node_modules/@prisma is already covered above
 
+# Vercel
+.vercel
+
 # Supabase local dev
 supabase/.branches
 supabase/.temp

@@ -23,6 +23,11 @@ app.get('/api/health', (req: Request, res: Response) => {
 // API Routes
 app.use('/api', apiRoutes);
 
-app.listen(PORT, () => {
-  console.log(`Enterprise Warehouse Management REST API running on port ${PORT}`);
-});
+// Only start the server when running locally (not in serverless)
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`Enterprise Warehouse Management REST API running on port ${PORT}`);
+  });
+}
+
+export default app;
