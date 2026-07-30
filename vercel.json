@@ -1,17 +1,8 @@
 {
   "version": 2,
   "buildCommand": "npm run build",
-  "outputDirectory": "frontend/dist",
-  "functions": {
-    "api/index.ts": {
-      "includeFiles": "backend/src/**,prisma/**"
-    }
-  },
+  "outputDirectory": "dist",
   "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "/api/index.ts"
-    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
