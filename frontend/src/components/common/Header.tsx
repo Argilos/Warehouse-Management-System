@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
+import { useLanguageStore } from '../../store/useLanguageStore';
 import { RoleSwitcher } from './RoleSwitcher';
-import { 
-  QrCode, Bell, Search, Warehouse, ShieldAlert, Clock, User as UserIcon, X 
+import { LanguageSelector } from './LanguageSelector';
+import {
+  QrCode, Bell, Search, Warehouse, ShieldAlert, Clock, User as UserIcon, X
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { 
-    currentUser, activeRole, notifications, markNotificationAsRead, 
-    globalSearch, setGlobalSearch, setActiveModule 
+  const {
+    currentUser, activeRole, notifications, markNotificationAsRead,
+    globalSearch, setGlobalSearch, setActiveModule
   } = useWarehouseStore();
+
+  const { t } = useLanguageStore();
 
   const [timeStr, setTimeStr] = useState<string>('');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -50,7 +54,7 @@ export const Header: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block leading-none mt-0.5">
-                Warehouse Asset & Employee Management
+                {t('header.subtitle')}
               </p>
             </div>
           </div>
@@ -61,7 +65,7 @@ export const Header: React.FC = () => {
             className="flex items-center gap-2 px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold text-xs shadow-sm transition-all active:scale-95"
           >
             <QrCode className="w-4 h-4" />
-            <span className="hidden md:inline">Scan Tool QR</span>
+            <span className="hidden md:inline">{t('header.scanToolQr')}</span>
           </button>
 
           {/* Global Search Bar */}
@@ -70,7 +74,7 @@ export const Header: React.FC = () => {
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search tools, serial numbers, QR codes, employees..."
+                placeholder={t('header.searchPlaceholder')}
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 className="w-full bg-surface-50 border border-surface-200 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 text-slate-700 placeholder-slate-400 text-xs rounded-lg pl-9 pr-4 py-2 outline-none transition-all"
@@ -80,6 +84,8 @@ export const Header: React.FC = () => {
 
           {/* Right Header Controls */}
           <div className="flex items-center gap-3">
+
+            <LanguageSelector />
 
             {/* Live Clock */}
             <div className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-500 bg-surface-50 px-2.5 py-1.5 rounded-lg border border-surface-200">
@@ -107,7 +113,7 @@ export const Header: React.FC = () => {
                   <div className="flex items-center justify-between px-4 py-3 bg-surface-50 border-b border-surface-200">
                     <div className="flex items-center gap-2">
                       <ShieldAlert className="w-4 h-4 text-amber-500" />
-                      <span className="font-semibold text-xs text-slate-700">System Alerts & Notifications</span>
+                      <span className="font-semibold text-xs text-slate-700">{t('header.systemAlerts')}</span>
                     </div>
                     <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-600">
                       <X className="w-4 h-4" />
@@ -116,17 +122,16 @@ export const Header: React.FC = () => {
 
                   <div className="max-h-80 overflow-y-auto divide-y divide-surface-100">
                     {notifications.length === 0 ? (
-                      <p className="p-4 text-xs text-slate-400 text-center">No active notifications</p>
+                      <p className="p-4 text-xs text-slate-400 text-center">{t('header.noNotifications')}</p>
                     ) : (
                       notifications.map((n) => (
                         <div
                           key={n.id}
                           onClick={() => markNotificationAsRead(n.id)}
-                          className={`p-3 text-xs cursor-pointer transition-colors ${
-                            n.isRead
+                          className={`p-3 text-xs cursor-pointer transition-colors ${n.isRead
                               ? 'bg-white text-slate-400'
                               : 'bg-brand-50 text-slate-700 hover:bg-brand-100'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between mb-1">
                             <span className="font-semibold text-brand-700">{n.title}</span>

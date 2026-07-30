@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
+import { useLanguageStore } from '../../store/useLanguageStore';
 import { Briefcase, Plus, MapPin } from 'lucide-react';
 
 export const ProjectModule: React.FC = () => {
   const { projects, addProject, activeRole } = useWarehouseStore();
+  const { t } = useLanguageStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectCode, setProjectCode] = useState('');
   const [name, setName] = useState('');
@@ -33,22 +35,22 @@ export const ProjectModule: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-5">
         <div>
           <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
             <Briefcase className="w-5 h-5 text-brand-600" />
-            <span>Project & Job Site Equipment Tracking</span>
+            <span>{t('Project & Job Site Equipment Tracking')}</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Track equipment allocated across construction projects, transit infrastructure, and energy sites.
+            {t('Track equipment allocated across construction projects, transit infrastructure, and energy sites.')}
           </p>
         </div>
 
         {(activeRole === 'ADMIN' || activeRole === 'WAREHOUSE_MANAGER' || activeRole === 'POWER_USER') && (
           <button onClick={handleOpenModal} className="btn-primary">
             <Plus className="w-4 h-4" />
-            <span>Create New Project</span>
+            <span>{t('Create New Project')}</span>
           </button>
         )}
       </div>
@@ -56,7 +58,7 @@ export const ProjectModule: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {projects.length === 0 ? (
           <div className="col-span-full glass-panel p-8 text-center text-slate-400 text-xs">
-            No active projects found. Click "Create New Project" to add projects.
+            {t('No active projects found. Click "Create New Project" to add projects.')}
           </div>
         ) : (
           projects.map((proj) => (
@@ -68,24 +70,23 @@ export const ProjectModule: React.FC = () => {
                   </span>
                   <h3 className="font-bold text-base text-slate-800 mt-1.5">{proj.name}</h3>
                 </div>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                  proj.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'
-                }`}>
-                  {proj.status}
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${proj.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'
+                  }`}>
+                  {t(proj.status)}
                 </span>
               </div>
 
               <div className="space-y-1.5 text-xs text-slate-600 bg-surface-50 p-3 rounded-lg border border-surface-200">
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Client:</span>
+                  <span className="text-slate-400">{t('Client:')}</span>
                   <span className="font-semibold text-slate-800">{proj.client}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Department:</span>
-                  <span>{proj.department}</span>
+                  <span className="text-slate-400">{t('Department:')}</span>
+                  <span>{t(proj.department)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Start Date:</span>
+                  <span className="text-slate-400">{t('Start Date:')}</span>
                   <span>{proj.startDate}</span>
                 </div>
                 {proj.location && (
@@ -100,10 +101,10 @@ export const ProjectModule: React.FC = () => {
         )}
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create New Project">
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('Create New Project')}>
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
-            <label className={labelClass}>Project Code</label>
+            <label className={labelClass}>{t('Project Code')}</label>
             <input
               type="text"
               required
@@ -113,7 +114,7 @@ export const ProjectModule: React.FC = () => {
             />
           </div>
           <div>
-            <label className={labelClass}>Project Name</label>
+            <label className={labelClass}>{t('Project Name')}</label>
             <input
               type="text"
               required
@@ -123,7 +124,7 @@ export const ProjectModule: React.FC = () => {
             />
           </div>
           <div>
-            <label className={labelClass}>Client Name</label>
+            <label className={labelClass}>{t('Client Name')}</label>
             <input
               type="text"
               required
@@ -133,7 +134,7 @@ export const ProjectModule: React.FC = () => {
             />
           </div>
           <div>
-            <label className={labelClass}>Location Site Address</label>
+            <label className={labelClass}>{t('Location Site Address')}</label>
             <input
               type="text"
               required
@@ -145,10 +146,10 @@ export const ProjectModule: React.FC = () => {
 
           <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
             <button type="button" onClick={() => setIsModalOpen(false)} className="btn-ghost">
-              Cancel
+              {t('Cancel')}
             </button>
             <button type="submit" className="btn-primary">
-              Register Project
+              {t('Register Project')}
             </button>
           </div>
         </form>

@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
+import { useLanguageStore } from '../../store/useLanguageStore';
 import { ClipboardCheck, Plus } from 'lucide-react';
 
 export const InventoryModule: React.FC = () => {
-  const { 
-    inventoryChecks, assets, createInventoryCheck, verifyInventoryItem, activeRole 
+  const {
+    inventoryChecks, assets, createInventoryCheck, verifyInventoryItem, activeRole
   } = useWarehouseStore();
+  const { t } = useLanguageStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [title, setTitle] = useState('Q3 Warehouse Physical Inventory Audit');
+  const [title, setTitle] = useState(t('Q3 Warehouse Physical Inventory Audit'));
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
 
   const handleStartAudit = (e: React.FormEvent) => {
@@ -23,15 +25,15 @@ export const InventoryModule: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-5">
         <div>
           <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
             <ClipboardCheck className="w-5 h-5 text-emerald-600" />
-            <span>Physical Inventory Audit & Cycle Counts</span>
+            <span>{t('Physical Inventory Audit & Cycle Counts')}</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Conduct periodic warehouse floor inventory audits, verify tool presence by QR scan, and generate variance discrepancy reports.
+            {t('Conduct periodic warehouse floor inventory audits, verify tool presence by QR scan, and generate variance discrepancy reports.')}
           </p>
         </div>
 
@@ -41,33 +43,33 @@ export const InventoryModule: React.FC = () => {
             className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all active:scale-95"
           >
             <Plus className="w-4 h-4" />
-            <span>Start New Inventory Audit Session</span>
+            <span>{t('Start New Inventory Audit Session')}</span>
           </button>
         )}
       </div>
 
       <div className="glass-panel p-5 space-y-4">
-        <h3 className="font-bold text-sm text-slate-800">Physical Inventory Audit History</h3>
+        <h3 className="font-bold text-sm text-slate-800">{t('Physical Inventory Audit History')}</h3>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
-                <th className="px-4 py-3 font-semibold">Audit Number</th>
-                <th className="px-4 py-3 font-semibold">Audit Title</th>
-                <th className="px-4 py-3 font-semibold">Date</th>
-                <th className="px-4 py-3 font-semibold">Auditor</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 font-semibold">Verified / Total</th>
-                <th className="px-4 py-3 font-semibold">Variances (Missing/Damaged)</th>
-                <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                <th className="px-4 py-3 font-semibold">{t('Audit Number')}</th>
+                <th className="px-4 py-3 font-semibold">{t('Audit Title')}</th>
+                <th className="px-4 py-3 font-semibold">{t('Date')}</th>
+                <th className="px-4 py-3 font-semibold">{t('Auditor')}</th>
+                <th className="px-4 py-3 font-semibold">{t('Status')}</th>
+                <th className="px-4 py-3 font-semibold">{t('Verified / Total')}</th>
+                <th className="px-4 py-3 font-semibold">{t('Variances (Missing/Damaged)')}</th>
+                <th className="px-4 py-3 font-semibold text-right">{t('Actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-100 text-slate-700">
               {inventoryChecks.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-6 text-center text-slate-400">
-                    No inventory audits created yet.
+                    {t('No inventory audits created yet.')}
                   </td>
                 </tr>
               ) : (
@@ -78,25 +80,24 @@ export const InventoryModule: React.FC = () => {
                     <td className="px-4 py-3 text-slate-400">{chk.checkDate}</td>
                     <td className="px-4 py-3 text-slate-600">{chk.performedByName}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                        chk.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-                      }`}>
-                        {chk.status}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${chk.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>
+                        {t(chk.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 font-bold text-slate-800">
                       {chk.verifiedAssets} / {chk.totalAssets}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-amber-700 font-bold">{chk.damagedAssets} Damaged</span>,{' '}
-                      <span className="text-red-600 font-bold">{chk.missingAssets} Missing</span>
+                      <span className="text-amber-700 font-bold">{chk.damagedAssets} {t('Damaged')}</span>,{' '}
+                      <span className="text-red-600 font-bold">{chk.missingAssets} {t('Missing')}</span>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => setSelectedAuditId(chk.id)}
                         className="px-2.5 py-1 bg-surface-100 hover:bg-brand-50 text-brand-700 border border-surface-200 rounded font-semibold text-[11px]"
                       >
-                        Audit Checklist
+                        {t('Audit Checklist')}
                       </button>
                     </td>
                   </tr>
@@ -108,16 +109,16 @@ export const InventoryModule: React.FC = () => {
       </div>
 
       {/* Audit Checklist Modal */}
-      <Modal isOpen={!!selectedAuditId} onClose={() => setSelectedAuditId(null)} title="Inventory Audit Checklist & Verification">
+      <Modal isOpen={!!selectedAuditId} onClose={() => setSelectedAuditId(null)} title={t('Inventory Audit Checklist & Verification')}>
         <div className="space-y-4 text-xs">
-          <p className="text-slate-500">Click to verify equipment items scanned during this physical warehouse check:</p>
+          <p className="text-slate-500">{t('Click to verify equipment items scanned during this physical warehouse check:')}</p>
 
           <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
             {assets.map((ast) => (
               <div key={ast.id} className="p-3 bg-surface-50 border border-surface-200 rounded-lg flex items-center justify-between">
                 <div>
                   <span className="font-semibold text-slate-800">{ast.name}</span>
-                  <span className="font-mono text-[10px] text-slate-400 block">{ast.assetNumber} • Location: {ast.location}</span>
+                  <span className="font-mono text-[10px] text-slate-400 block">{ast.assetNumber} • {t('Location:')} {ast.location}</span>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -126,7 +127,7 @@ export const InventoryModule: React.FC = () => {
                     }}
                     className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-semibold text-[10px]"
                   >
-                    Verify GOOD
+                    {t('Verify GOOD')}
                   </button>
                   <button
                     onClick={() => {
@@ -134,7 +135,7 @@ export const InventoryModule: React.FC = () => {
                     }}
                     className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded font-semibold text-[10px]"
                   >
-                    Flag DAMAGED
+                    {t('Flag DAMAGED')}
                   </button>
                   <button
                     onClick={() => {
@@ -142,7 +143,7 @@ export const InventoryModule: React.FC = () => {
                     }}
                     className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded font-semibold text-[10px]"
                   >
-                    Flag MISSING
+                    {t('Flag MISSING')}
                   </button>
                 </div>
               </div>
@@ -152,10 +153,10 @@ export const InventoryModule: React.FC = () => {
       </Modal>
 
       {/* Start Audit Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Start New Inventory Audit Session">
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('Start New Inventory Audit Session')}>
         <form onSubmit={handleStartAudit} className="space-y-4 text-xs">
           <div>
-            <label className={labelClass}>Audit Session Title</label>
+            <label className={labelClass}>{t('Audit Session Title')}</label>
             <input
               type="text"
               required
@@ -166,10 +167,10 @@ export const InventoryModule: React.FC = () => {
           </div>
           <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
             <button type="button" onClick={() => setIsModalOpen(false)} className="btn-ghost">
-              Cancel
+              {t('Cancel')}
             </button>
             <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold shadow-sm">
-              Launch Audit Session
+              {t('Launch Audit Session')}
             </button>
           </div>
         </form>

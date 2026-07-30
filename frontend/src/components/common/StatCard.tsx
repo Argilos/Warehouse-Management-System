@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguageStore } from '../../store/useLanguageStore';
 
 interface StatCardProps {
   title: string;
@@ -19,6 +20,7 @@ export const StatCard: React.FC<StatCardProps> = ({
   trendUp,
   accentColor = 'from-brand-600 to-brand-500',
 }) => {
+  const { t } = useLanguageStore();
   return (
     <div className="glass-card p-5 relative overflow-hidden group">
       {/* Subtle background gradient glow */}
@@ -34,7 +36,7 @@ export const StatCard: React.FC<StatCardProps> = ({
               <span className={trendUp ? 'text-emerald-600' : 'text-red-500'}>
                 {trendUp ? '↑' : '↓'} {trend}
               </span>
-              <span className="text-slate-400 font-normal">vs last month</span>
+              <span className="text-slate-400 font-normal">{t('vs last month')}</span>
             </div>
           )}
         </div>

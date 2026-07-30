@@ -1,28 +1,30 @@
 import React, { useState } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
+import { useLanguageStore } from '../../store/useLanguageStore';
 import { Asset, AssetStatus } from '../../types';
 import { Modal } from '../common/Modal';
 import { formatCurrency } from '../../utils/depreciation';
-import { 
-  Package, Plus, Search, Filter, QrCode, Eye, Edit3, Trash2, 
-  Grid, List, DollarSign, Tag, CheckCircle, RefreshCw 
+import {
+  Package, Plus, Search, Filter, QrCode, Eye, Edit3, Trash2,
+  Grid, List, DollarSign, Tag, CheckCircle, RefreshCw
 } from 'lucide-react';
 
 const STATUS_STYLES: Record<string, string> = {
-  AVAILABLE:      'bg-emerald-50 text-emerald-700 border-emerald-200',
-  ISSUED:         'bg-blue-50 text-blue-700 border-blue-200',
-  IN_SERVICE:     'bg-amber-50 text-amber-700 border-amber-200',
+  AVAILABLE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  ISSUED: 'bg-blue-50 text-blue-700 border-blue-200',
+  IN_SERVICE: 'bg-amber-50 text-amber-700 border-amber-200',
   IN_CALIBRATION: 'bg-purple-50 text-purple-700 border-purple-200',
-  RETIRED:        'bg-slate-100 text-slate-500 border-slate-200',
-  DAMAGED:        'bg-red-50 text-red-700 border-red-200',
-  LOST:           'bg-rose-50 text-rose-700 border-rose-200',
+  RETIRED: 'bg-slate-100 text-slate-500 border-slate-200',
+  DAMAGED: 'bg-red-50 text-red-700 border-red-200',
+  LOST: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
 export const AssetManagementModule: React.FC = () => {
-  const { 
-    assets, suppliers, globalSearch, addAsset, updateAsset, deleteAsset, 
-    setSelectedAssetFor360, setSelectedAssetForQRLabel, activeRole 
+  const {
+    assets, suppliers, globalSearch, addAsset, updateAsset, deleteAsset,
+    setSelectedAssetFor360, setSelectedAssetForQRLabel, activeRole
   } = useWarehouseStore();
+  const { t } = useLanguageStore();
 
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
@@ -55,7 +57,7 @@ export const AssetManagementModule: React.FC = () => {
       ast.qrCode.toLowerCase().includes(globalSearch.toLowerCase()) ||
       ast.serialNumber.toLowerCase().includes(globalSearch.toLowerCase());
     const matchesCategory = categoryFilter === 'ALL' || ast.category === categoryFilter;
-    const matchesStatus   = statusFilter === 'ALL'   || ast.status === statusFilter;
+    const matchesStatus = statusFilter === 'ALL' || ast.status === statusFilter;
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
@@ -123,16 +125,16 @@ export const AssetManagementModule: React.FC = () => {
         <div>
           <h2 className="text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
             <Package className="w-5 h-5 text-brand-600" />
-            Asset & Tool Master Catalog
+            {t('Asset & Tool Master Catalog')}
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Manage equipment, QR references, depreciation parameters, and warehouse locations.
+            {t('Manage equipment, QR references, depreciation parameters, and warehouse locations.')}
           </p>
         </div>
         {canEdit && (
           <button onClick={handleOpenCreateModal} className="btn-primary">
             <Plus className="w-4 h-4" />
-            Register New Asset
+            {t('Register New Asset')}
           </button>
         )}
       </div>
@@ -147,12 +149,12 @@ export const AssetManagementModule: React.FC = () => {
               onChange={(e) => setCategoryFilter(e.target.value)}
               className="bg-surface-50 border border-surface-200 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none focus:border-brand-400 text-xs"
             >
-              <option value="ALL">All Categories</option>
-              <option value="Power Tools">Power Tools</option>
-              <option value="Measuring Devices">Measuring Devices</option>
-              <option value="Compressors & Generators">Compressors & Generators</option>
-              <option value="Heavy Equipment">Heavy Equipment</option>
-              <option value="Hand Tools & Kits">Hand Tools & Kits</option>
+              <option value="ALL">{t('All Categories')}</option>
+              <option value="Power Tools">{t('Power Tools')}</option>
+              <option value="Measuring Devices">{t('Measuring Devices')}</option>
+              <option value="Compressors & Generators">{t('Compressors & Generators')}</option>
+              <option value="Heavy Equipment">{t('Heavy Equipment')}</option>
+              <option value="Hand Tools & Kits">{t('Hand Tools & Kits')}</option>
             </select>
           </div>
           <div>
@@ -161,13 +163,13 @@ export const AssetManagementModule: React.FC = () => {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="bg-surface-50 border border-surface-200 text-slate-700 rounded-lg px-2.5 py-1.5 outline-none focus:border-brand-400 text-xs"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="AVAILABLE">AVAILABLE</option>
-              <option value="ISSUED">ISSUED</option>
-              <option value="IN_SERVICE">IN SERVICE</option>
-              <option value="IN_CALIBRATION">IN CALIBRATION</option>
-              <option value="RETIRED">RETIRED</option>
-              <option value="DAMAGED">DAMAGED</option>
+              <option value="ALL">{t('All Statuses')}</option>
+              <option value="AVAILABLE">{t('AVAILABLE')}</option>
+              <option value="ISSUED">{t('ISSUED')}</option>
+              <option value="IN_SERVICE">{t('IN SERVICE')}</option>
+              <option value="IN_CALIBRATION">{t('IN CALIBRATION')}</option>
+              <option value="RETIRED">{t('RETIRED')}</option>
+              <option value="DAMAGED">{t('DAMAGED')}</option>
             </select>
           </div>
         </div>
@@ -177,14 +179,14 @@ export const AssetManagementModule: React.FC = () => {
           <button
             onClick={() => setViewMode('table')}
             className={`p-1.5 rounded ${viewMode === 'table' ? 'bg-white text-brand-600 shadow-card' : 'text-slate-400 hover:text-slate-600'}`}
-            title="Table View"
+            title={t('Table View')}
           >
             <List className="w-4 h-4" />
           </button>
           <button
             onClick={() => setViewMode('grid')}
             className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white text-brand-600 shadow-card' : 'text-slate-400 hover:text-slate-600'}`}
-            title="Grid Card View"
+            title={t('Grid Card View')}
           >
             <Grid className="w-4 h-4" />
           </button>
@@ -193,7 +195,7 @@ export const AssetManagementModule: React.FC = () => {
 
       {/* Asset Count */}
       <p className="text-xs text-slate-400 px-1">
-        Showing <span className="font-semibold text-slate-600">{filteredAssets.length}</span> of <span className="font-semibold text-slate-600">{assets.length}</span> assets
+        {t('Showing')} <span className="font-semibold text-slate-600">{filteredAssets.length}</span> {t('of')} <span className="font-semibold text-slate-600">{assets.length}</span> {t('assets')}
       </p>
 
       {/* Table View */}
@@ -203,21 +205,21 @@ export const AssetManagementModule: React.FC = () => {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-3 font-semibold">Asset Code</th>
-                  <th className="px-4 py-3 font-semibold">QR / Serial</th>
-                  <th className="px-4 py-3 font-semibold">Asset Name</th>
-                  <th className="px-4 py-3 font-semibold">Category</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Location</th>
-                  <th className="px-4 py-3 font-semibold">Book Value</th>
-                  <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                  <th className="px-4 py-3 font-semibold">{t('Asset Code')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('QR / Serial')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('Asset Name')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('Category')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('Status')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('Location')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('Book Value')}</th>
+                  <th className="px-4 py-3 font-semibold text-right">{t('Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-100 text-slate-700">
                 {filteredAssets.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
-                      No assets found. {canEdit && 'Click "Register New Asset" to add one.'}
+                      {t('No assets found.')} {canEdit && t('Click "Register New Asset" to add one.')}
                     </td>
                   </tr>
                 ) : (

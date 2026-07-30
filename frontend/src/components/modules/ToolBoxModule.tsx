@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
+import { useLanguageStore } from '../../store/useLanguageStore';
 import { Package, Plus, User } from 'lucide-react';
 
 export const ToolBoxModule: React.FC = () => {
-  const { 
-    toolBoxes, assets, employees, createToolBox, activeRole 
+  const {
+    toolBoxes, assets, employees, createToolBox, activeRole
   } = useWarehouseStore();
+  const { t } = useLanguageStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [boxNumber, setBoxNumber] = useState('');
@@ -17,7 +19,7 @@ export const ToolBoxModule: React.FC = () => {
   const handleOpenCreateModal = () => {
     const randId = Math.floor(10 + Math.random() * 90);
     setBoxNumber(`TBX-KIT-${randId}`);
-    setName(`Master Service Toolkit #${randId}`);
+    setName(`${t('Master Service Toolkit')} #${randId}`);
     setSelectedEmployeeId(employees[0]?.id || '');
     setSelectedAssetIds([]);
     setIsModalOpen(true);
@@ -38,23 +40,23 @@ export const ToolBoxModule: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      
+
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-5">
         <div>
           <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
             <Package className="w-5 h-5 text-brand-600" />
-            <span>Tool Box & Equipment Kit Management</span>
+            <span>{t('Tool Box & Equipment Kit Management')}</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Assemble permanent tool kits, assign toolboxes to technician vans, and conduct periodic kit component audits.
+            {t('Assemble permanent tool kits, assign toolboxes to technician vans, and conduct periodic kit component audits.')}
           </p>
         </div>
 
         {(activeRole === 'ADMIN' || activeRole === 'WAREHOUSE_MANAGER') && (
           <button onClick={handleOpenCreateModal} className="btn-primary">
             <Plus className="w-4 h-4" />
-            <span>Assemble New Tool Box Kit</span>
+            <span>{t('Assemble New Tool Box Kit')}</span>
           </button>
         )}
       </div>
@@ -63,7 +65,7 @@ export const ToolBoxModule: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {toolBoxes.length === 0 ? (
           <div className="col-span-full glass-panel p-8 text-center text-slate-400 text-xs">
-            No tool boxes assembled yet. Click "Assemble New Tool Box Kit" to create kits.
+            {t('No tool boxes assembled yet. Click "Assemble New Tool Box Kit" to create kits.')}
           </div>
         ) : (
           toolBoxes.map((tb) => (
@@ -75,22 +77,21 @@ export const ToolBoxModule: React.FC = () => {
                   </span>
                   <h3 className="font-bold text-base text-slate-800 mt-1.5">{tb.name}</h3>
                 </div>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                  tb.status === 'ASSIGNED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}>
-                  {tb.status}
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${tb.status === 'ASSIGNED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}>
+                  {t(tb.status)}
                 </span>
               </div>
 
               <div className="flex items-center gap-2 text-xs text-slate-700 bg-surface-50 p-2.5 rounded-lg border border-surface-200">
                 <User className="w-4 h-4 text-brand-600" />
-                <span className="text-slate-500">Technician:</span>
-                <span className="font-semibold text-slate-800">{tb.employeeName || 'Unassigned'}</span>
+                <span className="text-slate-500">{t('Technician:')}</span>
+                <span className="font-semibold text-slate-800">{tb.employeeName || t('Unassigned')}</span>
               </div>
 
               <div>
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                  Included Tools ({tb.items.length})
+                  {t('Included Tools')} ({tb.items.length})
                 </p>
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                   {tb.items.map((item) => (
@@ -103,12 +104,12 @@ export const ToolBoxModule: React.FC = () => {
               </div>
 
               <div className="pt-2 border-t border-surface-100 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>Inspected: {tb.lastInspectedDate || 'Not inspected'}</span>
+                <span>{t('Inspected:')} {tb.lastInspectedDate || t('Not inspected')}</span>
                 <button
-                  onClick={() => alert(`Tool Box Kit ${tb.boxNumber} inspection logged clean.`)}
+                  onClick={() => alert(`Simulated: ${t('Tool Box Kit')} ${tb.boxNumber} ${t('inspection logged clean.')}`)}
                   className="px-2.5 py-1 bg-surface-100 hover:bg-brand-50 text-brand-700 border border-surface-200 rounded font-medium transition-all"
                 >
-                  Log Kit Audit
+                  {t('Log Kit Audit')}
                 </button>
               </div>
             </div>
@@ -117,10 +118,10 @@ export const ToolBoxModule: React.FC = () => {
       </div>
 
       {/* Assemble Tool Box Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Assemble New Tool Box Kit">
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('Assemble New Tool Box Kit')}>
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
-            <label className={labelClass}>Tool Box Kit Identifier Number</label>
+            <label className={labelClass}>{t('Tool Box Kit Identifier Number')}</label>
             <input
               type="text"
               required
@@ -131,7 +132,7 @@ export const ToolBoxModule: React.FC = () => {
           </div>
 
           <div>
-            <label className={labelClass}>Tool Box Package Name</label>
+            <label className={labelClass}>{t('Tool Box Package Name')}</label>
             <input
               type="text"
               required
@@ -142,21 +143,21 @@ export const ToolBoxModule: React.FC = () => {
           </div>
 
           <div>
-            <label className={labelClass}>Assign Custody to Employee</label>
+            <label className={labelClass}>{t('Assign Custody to Employee')}</label>
             <select
               value={selectedEmployeeId}
               onChange={(e) => setSelectedEmployeeId(e.target.value)}
               className={inputClass}
             >
-              <option value="">Unassigned (Stored in Warehouse)</option>
+              <option value="">{t('Unassigned (Stored in Warehouse)')}</option>
               {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName} ({emp.department})</option>
+                <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName} ({t(emp.department)})</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className={labelClass}>Select Component Tools to Pack into Kit ({selectedAssetIds.length} packed)</label>
+            <label className={labelClass}>{t('Select Component Tools to Pack into Kit')} ({selectedAssetIds.length} {t('packed')})</label>
             <div className="max-h-48 overflow-y-auto bg-surface-50 border border-surface-200 rounded-lg p-2 space-y-1">
               {assets.map((ast) => {
                 const isPacked = selectedAssetIds.includes(ast.id);
@@ -164,9 +165,8 @@ export const ToolBoxModule: React.FC = () => {
                   <div
                     key={ast.id}
                     onClick={() => handleToggleAsset(ast.id)}
-                    className={`p-2 rounded cursor-pointer flex items-center justify-between border transition-all ${
-                      isPacked ? 'bg-brand-50 border-brand-300 text-brand-900' : 'bg-white border-surface-200 text-slate-700 hover:bg-surface-100'
-                    }`}
+                    className={`p-2 rounded cursor-pointer flex items-center justify-between border transition-all ${isPacked ? 'bg-brand-50 border-brand-300 text-brand-900' : 'bg-white border-surface-200 text-slate-700 hover:bg-surface-100'
+                      }`}
                   >
                     <div>
                       <span className="font-semibold">{ast.name}</span>
@@ -181,10 +181,10 @@ export const ToolBoxModule: React.FC = () => {
 
           <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
             <button type="button" onClick={() => setIsModalOpen(false)} className="btn-ghost">
-              Cancel
+              {t('Cancel')}
             </button>
             <button type="submit" className="btn-primary">
-              Assemble Tool Box Kit
+              {t('Assemble Tool Box Kit')}
             </button>
           </div>
         </form>

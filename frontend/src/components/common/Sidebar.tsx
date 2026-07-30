@@ -1,30 +1,32 @@
 import React from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
-import { 
-  LayoutDashboard, PackageCheck, QrCode, ArrowLeftRight, Package, 
-  Wrench, Gauge, Users, Building2, Briefcase, ClipboardCheck, 
-  BarChart3, ShieldCheck, Settings, History 
+import { useLanguageStore } from '../../store/useLanguageStore';
+import {
+  LayoutDashboard, PackageCheck, QrCode, ArrowLeftRight, Package,
+  Wrench, Gauge, Users, Building2, Briefcase, ClipboardCheck,
+  BarChart3, ShieldCheck, Settings, History
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const { activeModule, setActiveModule, activeRole } = useWarehouseStore();
+  const { t } = useLanguageStore();
 
   const navigationItems = [
-    { id: 'dashboard',   label: 'Dashboard',              icon: <LayoutDashboard className="w-4 h-4" />, category: 'Core' },
-    { id: 'assets',      label: 'Asset Management',        icon: <PackageCheck className="w-4 h-4" />,    category: 'Core' },
-    { id: 'qr-scan',     label: 'QR Mobile Access',        icon: <QrCode className="w-4 h-4" />,          category: 'Operations' },
-    { id: 'issuing',     label: 'Issue & Return Tools',     icon: <ArrowLeftRight className="w-4 h-4" />, category: 'Operations' },
-    { id: 'toolboxes',   label: 'Tool Boxes (Kits)',        icon: <Package className="w-4 h-4" />,         category: 'Operations' },
-    { id: 'maintenance', label: 'Maintenance & Repairs',   icon: <Wrench className="w-4 h-4" />,          category: 'Services' },
-    { id: 'calibration', label: 'Calibration Tracking',    icon: <Gauge className="w-4 h-4" />,           category: 'Services' },
-    { id: 'employees',   label: 'Employee Directory',      icon: <Users className="w-4 h-4" />,           category: 'People & Vendors' },
-    { id: 'suppliers',   label: 'Supplier Vendors',        icon: <Building2 className="w-4 h-4" />,       category: 'People & Vendors' },
-    { id: 'projects',    label: 'Project Allocations',     icon: <Briefcase className="w-4 h-4" />,       category: 'People & Vendors' },
-    { id: 'inventory',   label: 'Physical Audit Check',    icon: <ClipboardCheck className="w-4 h-4" />, category: 'Reports & Audit' },
-    { id: 'reports',     label: 'Financial & Analytics',   icon: <BarChart3 className="w-4 h-4" />,       category: 'Reports & Audit' },
-    { id: 'users',       label: 'User RBAC Matrix',        icon: <ShieldCheck className="w-4 h-4" />,     category: 'Admin' },
-    { id: 'settings',    label: 'System Settings',         icon: <Settings className="w-4 h-4" />,        category: 'Admin' },
-    { id: 'audit-logs',  label: 'Audit Log Trail',         icon: <History className="w-4 h-4" />,         category: 'Admin' },
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" />, category: 'Core' },
+    { id: 'assets', label: 'Asset Management', icon: <PackageCheck className="w-4 h-4" />, category: 'Core' },
+    { id: 'qr-scan', label: 'QR Mobile Access', icon: <QrCode className="w-4 h-4" />, category: 'Operations' },
+    { id: 'issuing', label: 'Issue & Return Tools', icon: <ArrowLeftRight className="w-4 h-4" />, category: 'Operations' },
+    { id: 'toolboxes', label: 'Tool Boxes (Kits)', icon: <Package className="w-4 h-4" />, category: 'Operations' },
+    { id: 'maintenance', label: 'Maintenance & Repairs', icon: <Wrench className="w-4 h-4" />, category: 'Services' },
+    { id: 'calibration', label: 'Calibration Tracking', icon: <Gauge className="w-4 h-4" />, category: 'Services' },
+    { id: 'employees', label: 'Employee Directory', icon: <Users className="w-4 h-4" />, category: 'People & Vendors' },
+    { id: 'suppliers', label: 'Supplier Vendors', icon: <Building2 className="w-4 h-4" />, category: 'People & Vendors' },
+    { id: 'projects', label: 'Project Allocations', icon: <Briefcase className="w-4 h-4" />, category: 'People & Vendors' },
+    { id: 'inventory', label: 'Physical Audit Check', icon: <ClipboardCheck className="w-4 h-4" />, category: 'Reports & Audit' },
+    { id: 'reports', label: 'Financial & Analytics', icon: <BarChart3 className="w-4 h-4" />, category: 'Reports & Audit' },
+    { id: 'users', label: 'User RBAC Matrix', icon: <ShieldCheck className="w-4 h-4" />, category: 'Admin' },
+    { id: 'settings', label: 'System Settings', icon: <Settings className="w-4 h-4" />, category: 'Admin' },
+    { id: 'audit-logs', label: 'Audit Log Trail', icon: <History className="w-4 h-4" />, category: 'Admin' },
   ];
 
   const isEmployeeRole = activeRole === 'WAREHOUSE_EMPLOYEE';
@@ -41,7 +43,7 @@ export const Sidebar: React.FC = () => {
           return (
             <div key={category}>
               <p className="px-3 mb-1.5 text-[10px] uppercase font-bold tracking-widest text-slate-400">
-                {category}
+                {t(category)}
               </p>
               <div className="space-y-0.5">
                 {items.map((item) => {
@@ -50,16 +52,15 @@ export const Sidebar: React.FC = () => {
                     <button
                       key={item.id}
                       onClick={() => setActiveModule(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                        isActive
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${isActive
                           ? 'bg-brand-600 text-white shadow-glow'
                           : 'text-slate-500 hover:text-slate-800 hover:bg-surface-100'
-                      }`}
+                        }`}
                     >
                       <span className={isActive ? 'text-white' : 'text-slate-400'}>
                         {item.icon}
                       </span>
-                      <span>{item.label}</span>
+                      <span>{t(item.label)}</span>
                     </button>
                   );
                 })}
