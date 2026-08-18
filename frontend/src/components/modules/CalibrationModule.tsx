@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
 import { CalibrationResult } from '../../types';
@@ -7,7 +7,7 @@ import { Gauge, Plus, AlertTriangle, FileText, Upload, CheckCircle2 } from 'luci
 
 export const CalibrationModule: React.FC = () => {
   const {
-    calibrations, assets, suppliers, addCalibrationRecord, activeRole
+    calibrations, assets, suppliers, addCalibrationRecord, fetchInitialData, activeRole
   } = useWarehouseStore();
   const { t } = useLanguageStore();
 
@@ -22,6 +22,11 @@ export const CalibrationModule: React.FC = () => {
   const [result, setResult] = useState<CalibrationResult>('PASS');
   const [notes, setNotes] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+
+  // Fetch live data from backend API on component mount
+  useEffect(() => {
+    fetchInitialData();
+  }, []);
 
   const measuringAssets = assets.filter(
     (a) => a.category === 'Measuring Devices' ||
@@ -78,12 +83,48 @@ export const CalibrationModule: React.FC = () => {
   const inputClass = 'w-full bg-white border border-surface-200 text-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all placeholder:text-slate-400';
   const labelClass = 'block text-xs font-semibold text-slate-600 mb-1';
 
-  const calibrationsDue30Days = calibrations.filter((cal) => {
+  const now = new Date();
+
+  // 1. Gather all calibration records due within 30 days or overdue
+  const recordsDue = calibrations.filter((cal) => {
     if (!cal.nextCalibrationDate) return false;
     const nextDate = new Date(cal.nextCalibrationDate);
-    const diffDays = (nextDate.getTime() - new Date().getTime()) / (1000 * 3600 * 24);
+    const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
     return diffDays <= 30;
   });
+
+  // 2. Gather live assets with nextCalibrationDate due within 30 days or IN_CALIBRATION status
+  const assetDueItems = assets
+    .filter((a) => {
+      if (a.status === 'IN_CALIBRATION') return true;
+      if (a.nextCalibrationDate) {
+        const nextDate = new Date(a.nextCalibrationDate);
+        const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+        return diffDays <= 30;
+      }
+      return false;
+    })
+    .map((a) => {
+      const existingCal = recordsDue.find((c) => c.assetId === a.id);
+      if (existingCal) return existingCal;
+      return {
+        id: `live-asset-cal-${a.id}`,
+        assetId: a.id,
+        assetName: a.name,
+        assetNumber: a.assetNumber,
+        providerName: a.supplierName || 'Fluke Calibration Services',
+        calibrationDate: a.lastServiceDate || a.purchaseDate,
+        nextCalibrationDate: a.nextCalibrationDate || new Date().toISOString().slice(0, 10),
+        certificateNumber: `CERT-${a.assetNumber}`,
+        result: 'PASS' as CalibrationResult,
+        notes: a.status === 'IN_CALIBRATION' ? 'Tool currently in lab undergoing calibration.' : 'Calibration due date approaching.',
+      };
+    });
+
+  // Combine and deduplicate live items by assetId
+  const calibrationsDue30Days = Array.from(
+    new Map([...recordsDue, ...assetDueItems].map((item) => [item.assetId, item])).values()
+  );
 
   return (
     <div className="space-y-5">
