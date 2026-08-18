@@ -40,20 +40,34 @@ export const DashboardModule: React.FC = () => {
   const totalCurrentValue = assets.reduce((sum, a) => sum + a.currentValue, 0);
 
   const statusPieData = [
-    { name: 'Available', value: availableCount, color: '#10b981' },
-    { name: 'Issued', value: issuedCount, color: '#3b82f6' },
-    { name: 'In Service', value: serviceCount, color: '#f59e0b' },
-    { name: 'In Calibration', value: calibrationCount, color: '#8b5cf6' },
-    { name: 'Retired', value: retiredCount, color: '#94a3b8' },
+    { name: t('AVAILABLE'), value: availableCount, color: '#10b981' },
+    { name: t('ISSUED'), value: issuedCount, color: '#3b82f6' },
+    { name: t('IN SERVICE'), value: serviceCount, color: '#f59e0b' },
+    { name: t('IN CALIBRATION'), value: calibrationCount, color: '#8b5cf6' },
+    { name: t('RETIRED'), value: retiredCount, color: '#94a3b8' },
   ].filter(d => d.value > 0);
 
   const categoriesMap: Record<string, number> = {};
   assets.forEach(a => { categoriesMap[a.category] = (categoriesMap[a.category] || 0) + 1; });
   const categoryBarData = Object.keys(categoriesMap).map(cat => ({ name: cat, count: categoriesMap[cat] }));
 
-  const expiringCalibrations = calibrations.filter(c => {
+  const latestCalByAssetId = new Map<string, typeof calibrations[0]>();
+  calibrations.forEach((cal) => {
+    const existing = latestCalByAssetId.get(cal.assetId);
+    if (!existing) {
+      latestCalByAssetId.set(cal.assetId, cal);
+    } else {
+      const existingDate = new Date(existing.nextCalibrationDate || existing.calibrationDate).getTime();
+      const currentDate = new Date(cal.nextCalibrationDate || cal.calibrationDate).getTime();
+      if (currentDate > existingDate) {
+        latestCalByAssetId.set(cal.assetId, cal);
+      }
+    }
+  });
+
+  const expiringCalibrations = Array.from(latestCalByAssetId.values()).filter(c => {
     const diffDays = (new Date(c.nextCalibrationDate).getTime() - Date.now()) / (1000 * 3600 * 24);
-    return diffDays >= 0 && diffDays <= 30;
+    return diffDays <= 30;
   });
 
   return (
@@ -138,7 +152,7 @@ export const DashboardModule: React.FC = () => {
                     <p className="text-[11px] text-slate-500 mt-0.5">{srv.problemDescription}</p>
                   </div>
                   <span className="px-2 py-0.5 bg-amber-100 text-amber-700 border border-amber-200 rounded font-semibold text-[10px] uppercase">
-                    {srv.status}
+                    {t(srv.status)}
                   </span>
                 </div>
               ))

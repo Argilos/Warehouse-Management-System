@@ -134,12 +134,12 @@ export const Header: React.FC = () => {
                             }`}
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <span className="font-semibold text-brand-700">{n.title}</span>
+                            <span className="font-semibold text-brand-700">{t(n.title)}</span>
                             <span className="text-[10px] text-slate-400">
                               {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
-                          <p className="text-slate-600 leading-relaxed text-[11px]">{n.message}</p>
+                          <p className="text-slate-600 leading-relaxed text-[11px]">{t(n.message)}</p>
                         </div>
                       ))
                     )}

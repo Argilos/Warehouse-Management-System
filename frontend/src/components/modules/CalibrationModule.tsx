@@ -85,46 +85,67 @@ export const CalibrationModule: React.FC = () => {
 
   const now = new Date();
 
-  // 1. Gather all calibration records due within 30 days or overdue
-  const recordsDue = calibrations.filter((cal) => {
-    if (!cal.nextCalibrationDate) return false;
-    const nextDate = new Date(cal.nextCalibrationDate);
-    const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
-    return diffDays <= 30;
+  // Map each assetId to its LATEST calibration record (highest nextCalibrationDate or latest calibrationDate)
+  const latestCalByAssetId = new Map<string, typeof calibrations[0]>();
+
+  calibrations.forEach((cal) => {
+    const existing = latestCalByAssetId.get(cal.assetId);
+    if (!existing) {
+      latestCalByAssetId.set(cal.assetId, cal);
+    } else {
+      const existingDate = new Date(existing.nextCalibrationDate || existing.calibrationDate).getTime();
+      const currentDate = new Date(cal.nextCalibrationDate || cal.calibrationDate).getTime();
+      if (currentDate > existingDate) {
+        latestCalByAssetId.set(cal.assetId, cal);
+      }
+    }
   });
 
-  // 2. Gather live assets with nextCalibrationDate due within 30 days or IN_CALIBRATION status
-  const assetDueItems = assets
-    .filter((a) => {
-      if (a.status === 'IN_CALIBRATION') return true;
-      if (a.nextCalibrationDate) {
-        const nextDate = new Date(a.nextCalibrationDate);
-        const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
-        return diffDays <= 30;
-      }
-      return false;
-    })
-    .map((a) => {
-      const existingCal = recordsDue.find((c) => c.assetId === a.id);
-      if (existingCal) return existingCal;
-      return {
-        id: `live-asset-cal-${a.id}`,
-        assetId: a.id,
-        assetName: a.name,
-        assetNumber: a.assetNumber,
-        providerName: a.supplierName || 'Fluke Calibration Services',
-        calibrationDate: a.lastServiceDate || a.purchaseDate,
-        nextCalibrationDate: a.nextCalibrationDate || new Date().toISOString().slice(0, 10),
-        certificateNumber: `CERT-${a.assetNumber}`,
-        result: 'PASS' as CalibrationResult,
-        notes: a.status === 'IN_CALIBRATION' ? 'Tool currently in lab undergoing calibration.' : 'Calibration due date approaching.',
-      };
-    });
+  // Build the list of tools requiring calibration action (latest calibration due within 30 days, overdue, or IN_CALIBRATION)
+  const calibrationsDue30Days: Array<{
+    id: string;
+    assetId: string;
+    assetName: string;
+    assetNumber: string;
+    providerName: string;
+    calibrationDate: string;
+    nextCalibrationDate: string;
+    certificateNumber: string;
+    result: CalibrationResult;
+    documentUrl?: string;
+    notes?: string;
+  }> = [];
 
-  // Combine and deduplicate live items by assetId
-  const calibrationsDue30Days = Array.from(
-    new Map([...recordsDue, ...assetDueItems].map((item) => [item.assetId, item])).values()
-  );
+  assets.forEach((ast) => {
+    const latestCal = latestCalByAssetId.get(ast.id);
+
+    if (latestCal) {
+      const nextDate = new Date(latestCal.nextCalibrationDate);
+      const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+      if (ast.status === 'IN_CALIBRATION' || diffDays <= 30) {
+        calibrationsDue30Days.push(latestCal);
+      }
+    } else {
+      const nextDateStr = ast.nextCalibrationDate;
+      const nextDate = nextDateStr ? new Date(nextDateStr) : null;
+      const diffDays = nextDate ? (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24) : 999;
+
+      if (ast.status === 'IN_CALIBRATION' || diffDays <= 30) {
+        calibrationsDue30Days.push({
+          id: `live-asset-cal-${ast.id}`,
+          assetId: ast.id,
+          assetName: ast.name,
+          assetNumber: ast.assetNumber,
+          providerName: ast.supplierName || 'Fluke Calibration Services',
+          calibrationDate: ast.lastServiceDate || ast.purchaseDate,
+          nextCalibrationDate: ast.nextCalibrationDate || now.toISOString().slice(0, 10),
+          certificateNumber: `CERT-${ast.assetNumber}`,
+          result: 'PASS' as CalibrationResult,
+          notes: ast.status === 'IN_CALIBRATION' ? 'Tool currently in lab undergoing calibration.' : 'Calibration due date approaching.',
+        });
+      }
+    }
+  });
 
   return (
     <div className="space-y-5">
