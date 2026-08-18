@@ -376,7 +376,6 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
         method: 'POST',
         body: JSON.stringify({ assetId, condition, notes }),
       });
-      await get().fetchInitialData();
     } catch (err) {
       console.error('Error verifying inventory item:', err);
     }

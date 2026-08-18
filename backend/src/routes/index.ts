@@ -35,6 +35,7 @@ router.get('/initial-data', async (req: Request, res: Response) => {
         include: { _count: { select: { transactions: true } } },
       }),
       prisma.asset.findMany({
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
         include: {
           supplier: true,
           employeeAssets: {
@@ -768,23 +769,44 @@ router.post('/inventory-checks/:id/verify', async (req: Request, res: Response) 
     const isDamaged = condition === 'DAMAGED';
     const isMissing = condition === 'MISSING';
 
-    await prisma.inventoryCheckItem.create({
-      data: {
-        inventoryCheckId: id,
-        assetId,
-        verified: true,
-        condition: condition || 'GOOD',
-        notes,
-        scannedAt: new Date(),
-      },
+    const existingItem = await prisma.inventoryCheckItem.findFirst({
+      where: { inventoryCheckId: id, assetId },
     });
+
+    if (existingItem) {
+      await prisma.inventoryCheckItem.update({
+        where: { id: existingItem.id },
+        data: {
+          condition: condition || 'GOOD',
+          notes,
+          scannedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.inventoryCheckItem.create({
+        data: {
+          inventoryCheckId: id,
+          assetId,
+          verified: true,
+          condition: condition || 'GOOD',
+          notes,
+          scannedAt: new Date(),
+        },
+      });
+    }
+
+    const [totalVerified, damagedCount, missingCount] = await Promise.all([
+      prisma.inventoryCheckItem.count({ where: { inventoryCheckId: id, verified: true } }),
+      prisma.inventoryCheckItem.count({ where: { inventoryCheckId: id, condition: 'DAMAGED' } }),
+      prisma.inventoryCheckItem.count({ where: { inventoryCheckId: id, condition: 'MISSING' } }),
+    ]);
 
     await prisma.inventoryCheck.update({
       where: { id },
       data: {
-        verifiedAssets: { increment: 1 },
-        damagedAssets: isDamaged ? { increment: 1 } : undefined,
-        missingAssets: isMissing ? { increment: 1 } : undefined,
+        verifiedAssets: totalVerified,
+        damagedAssets: damagedCount,
+        missingAssets: missingCount,
       },
     });
 
@@ -792,10 +814,13 @@ router.post('/inventory-checks/:id/verify', async (req: Request, res: Response) 
       await prisma.asset.update({ where: { id: assetId }, data: { status: 'DAMAGED' } });
     } else if (isMissing) {
       await prisma.asset.update({ where: { id: assetId }, data: { status: 'LOST' } });
+    } else {
+      await prisma.asset.update({ where: { id: assetId }, data: { status: 'AVAILABLE' } });
     }
 
-    res.json({ success: true });
+    res.json({ success: true, verifiedAssets: totalVerified, damagedAssets: damagedCount, missingAssets: missingCount });
   } catch (error) {
+    console.error('Error verifying inventory item:', error);
     res.status(500).json({ error: 'Failed to verify inventory item' });
   }
 });

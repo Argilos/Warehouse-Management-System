@@ -35,8 +35,10 @@ export const InventoryModule: React.FC = () => {
 
   const handleSubmitAudit = async () => {
     if (selectedAuditId) {
-      await completeInventoryCheck(selectedAuditId);
+      const targetAuditId = selectedAuditId;
       setSelectedAuditId(null);
+      setItemConditions({});
+      await completeInventoryCheck(targetAuditId);
     }
   };
 
@@ -134,7 +136,7 @@ export const InventoryModule: React.FC = () => {
           <p className="text-slate-500">{t('Select condition state for each tool scanned during this physical warehouse check:')}</p>
 
           <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-            {assets.map((ast) => {
+            {[...assets].sort((a, b) => a.name.localeCompare(b.name)).map((ast) => {
               const selectedCondition = itemConditions[ast.id];
 
               return (
