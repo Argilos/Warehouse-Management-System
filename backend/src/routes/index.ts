@@ -819,6 +819,19 @@ router.get('/calibrations', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/calibrations/send-to-lab', async (req: Request, res: Response) => {
+  try {
+    const { assetId } = req.body;
+    const updatedAsset = await prisma.asset.update({
+      where: { id: assetId },
+      data: { status: 'IN_CALIBRATION' },
+    });
+    res.json(updatedAsset);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to send tool to calibration lab' });
+  }
+});
+
 router.post('/calibrations', async (req: Request, res: Response) => {
   try {
     const body = req.body;
@@ -836,9 +849,11 @@ router.post('/calibrations', async (req: Request, res: Response) => {
       include: { asset: true, provider: true },
     });
 
+    const newStatus = body.result === 'FAIL' ? 'DAMAGED' : 'AVAILABLE';
+
     await prisma.asset.update({
       where: { id: body.assetId },
-      data: { status: 'AVAILABLE' },
+      data: { status: newStatus },
     });
 
     const user = await prisma.user.findFirst();
@@ -847,8 +862,8 @@ router.post('/calibrations', async (req: Request, res: Response) => {
         data: {
           userId: user.id,
           type: 'CALIBRATION',
-          title: `Calibration Certificate Logged: ${newRecord.asset.name}`,
-          message: `Certificate #${newRecord.certificateNumber} logged for ${newRecord.asset.name} (${newRecord.result}). Next calibration due on ${newRecord.nextCalibrationDate.toISOString().slice(0, 10)}.`,
+          title: `Calibration Certificate Completed: ${newRecord.asset.name}`,
+          message: `Certificate #${newRecord.certificateNumber} submitted for ${newRecord.asset.name} (${newRecord.result}). Next calibration due on ${newRecord.nextCalibrationDate.toISOString().slice(0, 10)}.`,
           isRead: false,
         },
       });

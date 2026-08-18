@@ -63,6 +63,7 @@ interface WarehouseStore {
 
   // Calibration Actions
   addCalibrationRecord: (record: Omit<CalibrationRecord, 'id'>) => Promise<void>;
+  sendToolToCalibration: (assetId: string) => Promise<void>;
 
   // Employee Actions
   addEmployee: (employee: Omit<Employee, 'id'>) => Promise<void>;
@@ -293,6 +294,18 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
       await get().fetchInitialData();
     } catch (err) {
       console.error('Error adding calibration record:', err);
+    }
+  },
+
+  sendToolToCalibration: async (assetId) => {
+    try {
+      await apiFetch('/calibrations/send-to-lab', {
+        method: 'POST',
+        body: JSON.stringify({ assetId }),
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error sending tool to calibration:', err);
     }
   },
 

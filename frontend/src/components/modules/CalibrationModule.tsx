@@ -3,16 +3,19 @@ import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
 import { CalibrationResult } from '../../types';
 import { useLanguageStore } from '../../store/useLanguageStore';
-import { Gauge, Plus, AlertTriangle, FileText } from 'lucide-react';
+import { Gauge, Plus, AlertTriangle, FileText, Upload, CheckCircle2, Send, Calendar } from 'lucide-react';
 
 export const CalibrationModule: React.FC = () => {
   const {
-    calibrations, assets, suppliers, addCalibrationRecord, activeRole
+    calibrations, assets, suppliers, addCalibrationRecord, sendToolToCalibration, activeRole
   } = useWarehouseStore();
   const { t } = useLanguageStore();
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [isSendLabModalOpen, setIsSendLabModalOpen] = useState(false);
+
   const [selectedAssetId, setSelectedAssetId] = useState('');
+  const [sendLabAssetId, setSendLabAssetId] = useState('');
   const [providerId, setProviderId] = useState('');
   const [calibrationDate, setCalibrationDate] = useState(new Date().toISOString().slice(0, 10));
   const [nextCalibrationDate, setNextCalibrationDate] = useState(
@@ -21,37 +24,74 @@ export const CalibrationModule: React.FC = () => {
   const [certificateNumber, setCertificateNumber] = useState('');
   const [result, setResult] = useState<CalibrationResult>('PASS');
   const [notes, setNotes] = useState('');
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
 
-  const measuringAssets = assets.filter((a) => a.category === 'Measuring Devices' || a.name.toLowerCase().includes('multimeter') || a.name.toLowerCase().includes('laser') || a.name.toLowerCase().includes('micrometer'));
+  const measuringAssets = assets.filter(
+    (a) => a.category === 'Measuring Devices' ||
+      a.status === 'IN_CALIBRATION' ||
+      a.name.toLowerCase().includes('multimeter') ||
+      a.name.toLowerCase().includes('laser') ||
+      a.name.toLowerCase().includes('micrometer')
+  );
 
-  const handleOpenModal = () => {
+  const toolsInCalibration = assets.filter((a) => a.status === 'IN_CALIBRATION');
+
+  const handleOpenSubmitModal = (preselectedId?: string) => {
     const randCert = Math.floor(1000 + Math.random() * 9000);
     setCertificateNumber(`CERT-FLK-2026-${randCert}`);
-    if (measuringAssets.length > 0) setSelectedAssetId(measuringAssets[0].id);
+    const targetId = preselectedId || (measuringAssets.length > 0 ? measuringAssets[0].id : '');
+    setSelectedAssetId(targetId);
     if (suppliers.length > 0) setProviderId(suppliers[0].id);
     setNotes('');
-    setIsModalOpen(true);
+    setUploadedFileName(null);
+    setIsSubmitModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleOpenSendLabModal = () => {
+    const avail = assets.filter((a) => a.status === 'AVAILABLE');
+    if (avail.length > 0) setSendLabAssetId(avail[0].id);
+    setIsSendLabModalOpen(true);
+  };
+
+  const handleSendToLab = (e: React.FormEvent) => {
     e.preventDefault();
-    const ast = assets.find(a => a.id === selectedAssetId);
-    const sup = suppliers.find(s => s.id === providerId);
+    if (sendLabAssetId) {
+      sendToolToCalibration(sendLabAssetId);
+      setIsSendLabModalOpen(false);
+    }
+  };
+
+  const setNextDatePreset = (daysToAdd: number) => {
+    const targetDate = new Date(Date.now() + daysToAdd * 24 * 3600 * 1000);
+    setNextCalibrationDate(targetDate.toISOString().slice(0, 10));
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setUploadedFileName(e.target.files[0].name);
+    }
+  };
+
+  const handleSubmitCertificate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const ast = assets.find((a) => a.id === selectedAssetId);
+    const sup = suppliers.find((s) => s.id === providerId);
 
     addCalibrationRecord({
       assetId: selectedAssetId,
       assetName: ast?.name || '',
       assetNumber: ast?.assetNumber || '',
       providerId,
-      providerName: sup?.companyName || 'Fluke Calibration',
+      providerName: sup?.companyName || 'Fluke Calibration Services',
       calibrationDate,
       nextCalibrationDate,
       certificateNumber,
       result,
-      notes,
+      documentUrl: uploadedFileName || `Certificate_${certificateNumber}.pdf`,
+      notes: notes || t('Calibration test completed and certificate uploaded.'),
     });
 
-    setIsModalOpen(false);
+    setIsSubmitModalOpen(false);
   };
 
   const inputClass = 'w-full bg-white border border-surface-200 text-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all placeholder:text-slate-400';
@@ -68,20 +108,60 @@ export const CalibrationModule: React.FC = () => {
             <span>{t('Precision Calibration Tracking System')}</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            {t('Monitor calibration certificates, test accuracy results, vendor compliance, and 30-day expiration alerts for measuring devices.')}
+            {t('Monitor calibration certificates, end active lab tests, attach certificate files, and set next calibration due dates.')}
           </p>
         </div>
 
         {(activeRole === 'ADMIN' || activeRole === 'WAREHOUSE_MANAGER' || activeRole === 'POWER_USER') && (
-          <button
-            onClick={handleOpenModal}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t('Record Calibration Certificate')}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenSendLabModal}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-semibold shadow-sm transition-all active:scale-95"
+            >
+              <Send className="w-4 h-4" />
+              <span>{t('Send Tool to Calibration')}</span>
+            </button>
+
+            <button
+              onClick={() => handleOpenSubmitModal()}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t('Submit Certificate & End Calibration')}</span>
+            </button>
+          </div>
         )}
       </div>
+
+      {/* Active Calibration Lab Section */}
+      {toolsInCalibration.length > 0 && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+              <Gauge className="w-4 h-4 text-amber-600 animate-pulse" />
+              <span>{t('Instruments Currently Undergoing Calibration')} ({toolsInCalibration.length})</span>
+            </div>
+            <span className="text-[10px] text-amber-700 font-medium">{t('Select item below to submit certificate & restore to Available status')}</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {toolsInCalibration.map((ast) => (
+              <div key={ast.id} className="p-3 bg-white border border-amber-200 rounded-lg flex items-center justify-between gap-2 shadow-xs">
+                <div>
+                  <span className="font-bold text-xs text-slate-800">{ast.name}</span>
+                  <span className="font-mono text-[10px] text-amber-700 block">{ast.assetNumber}</span>
+                </div>
+                <button
+                  onClick={() => handleOpenSubmitModal(ast.id)}
+                  className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-[10px] font-semibold transition-all shrink-0"
+                >
+                  {t('End Calibration')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Calibration Registry Table */}
       <div className="glass-panel p-5 space-y-4">
@@ -97,7 +177,7 @@ export const CalibrationModule: React.FC = () => {
                 <th className="px-4 py-3 font-semibold">{t('Test Date')}</th>
                 <th className="px-4 py-3 font-semibold">{t('Next Due Date')}</th>
                 <th className="px-4 py-3 font-semibold">{t('Outcome')}</th>
-                <th className="px-4 py-3 font-semibold text-right">{t('Actions')}</th>
+                <th className="px-4 py-3 font-semibold text-right">{t('Certificate File')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-100 text-slate-700">
@@ -129,18 +209,21 @@ export const CalibrationModule: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${cal.result === 'PASS' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${cal.result === 'PASS' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            cal.result === 'CONDITIONAL' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              'bg-red-50 text-red-700 border-red-200'
                           }`}>
                           {t(cal.result)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
-                          onClick={() => alert(`Simulated Certificate Download: ${cal.certificateNumber}.pdf`)}
-                          className="p-1.5 bg-surface-100 hover:bg-surface-200 text-slate-600 rounded border border-surface-200"
-                          title={t("Download Certificate PDF")}
+                          onClick={() => alert(`Certificate Document: ${cal.documentUrl || cal.certificateNumber + '.pdf'}`)}
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-surface-100 hover:bg-surface-200 text-purple-700 border border-surface-200 rounded font-medium text-[10px]"
+                          title={t('View Calibration Certificate File')}
                         >
-                          <FileText className="w-4 h-4" />
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>{cal.documentUrl ? cal.documentUrl.slice(0, 14) + '...' : 'Certificate.pdf'}</span>
                         </button>
                       </td>
                     </tr>
@@ -152,9 +235,42 @@ export const CalibrationModule: React.FC = () => {
         </div>
       </div>
 
-      {/* Calibration Form Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('Record Calibration Certificate')}>
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+      {/* Send Tool to Calibration Lab Modal */}
+      <Modal isOpen={isSendLabModalOpen} onClose={() => setIsSendLabModalOpen(false)} title={t('Send Tool to Calibration Lab')}>
+        <form onSubmit={handleSendToLab} className="space-y-4 text-xs">
+          <div>
+            <label className={labelClass}>{t('Select Equipment Instrument')}</label>
+            <select
+              value={sendLabAssetId}
+              onChange={(e) => setSendLabAssetId(e.target.value)}
+              className={inputClass}
+            >
+              {assets.map((a) => (
+                <option key={a.id} value={a.id}>{a.name} ({a.assetNumber}) - {t(a.status)}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-slate-700">
+            <p className="font-semibold text-amber-900">{t('Calibration Lab Dispatch Note:')}</p>
+            <p className="text-[11px] text-slate-600 mt-0.5">{t('Sending this tool will switch its status to IN_CALIBRATION until a new calibration certificate is submitted.')}</p>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
+            <button type="button" onClick={() => setIsSendLabModalOpen(false)} className="btn-ghost">
+              {t('Cancel')}
+            </button>
+            <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-semibold shadow-sm">
+              <Send className="w-4 h-4" />
+              <span>{t('Dispatch to Lab')}</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Submit Certificate & End Calibration Form Modal */}
+      <Modal isOpen={isSubmitModalOpen} onClose={() => setIsSubmitModalOpen(false)} title={t('Submit Certificate & End Calibration')}>
+        <form onSubmit={handleSubmitCertificate} className="space-y-4 text-xs">
           <div>
             <label className={labelClass}>{t('Select Precision Measuring Instrument')}</label>
             <select
@@ -163,22 +279,41 @@ export const CalibrationModule: React.FC = () => {
               className={inputClass}
             >
               {measuringAssets.map((a) => (
-                <option key={a.id} value={a.id}>{a.name} ({a.assetNumber}) - {a.location}</option>
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.assetNumber}) {a.status === 'IN_CALIBRATION' ? `[${t('IN CALIBRATION LAB')}]` : ''}
+                </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className={labelClass}>{t('Calibration Vendor Provider')}</label>
+            <label className={labelClass}>{t('Calibration Vendor / Provider')}</label>
             <select
               value={providerId}
               onChange={(e) => setProviderId(e.target.value)}
               className={inputClass}
             >
               {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.companyName}</option>
+                <option key={s.id} value={s.id}>{s.companyName} ({s.services || 'Authorized Services'})</option>
               ))}
             </select>
+          </div>
+
+          {/* Certificate File Upload Field */}
+          <div>
+            <label className={labelClass}>{t('Submit Calibration Certificate Document (PDF / Image)')}</label>
+            <div className="flex items-center gap-2">
+              <label className="flex-1 cursor-pointer bg-surface-50 hover:bg-purple-50 border border-dashed border-purple-300 rounded-lg p-2.5 text-center flex items-center justify-center gap-2 text-purple-700 transition-all">
+                <Upload className="w-4 h-4" />
+                <span className="font-semibold">{uploadedFileName || t('Choose Certificate PDF / Image File')}</span>
+                <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={handleFileUpload} className="hidden" />
+              </label>
+            </div>
+            {uploadedFileName && (
+              <p className="text-[10px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> {t('Attached:')} {uploadedFileName}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -199,13 +334,13 @@ export const CalibrationModule: React.FC = () => {
                 onChange={(e) => setResult(e.target.value as CalibrationResult)}
                 className={inputClass}
               >
-                <option value="PASS">{t('PASS (Within Tolerance)')}</option>
-                <option value="CONDITIONAL">{t('CONDITIONAL (Minor offset noted)')}</option>
-                <option value="FAIL">{t('FAIL (Out of tolerance - Quarantined)')}</option>
+                <option value="PASS">{t('PASS (Within Tolerance - Return to Available)')}</option>
+                <option value="CONDITIONAL">{t('CONDITIONAL (Minor Offset - Return to Available)')}</option>
+                <option value="FAIL">{t('FAIL (Out of Tolerance - Flag Damaged)')}</option>
               </select>
             </div>
             <div>
-              <label className={labelClass}>{t('Calibration Date')}</label>
+              <label className={labelClass}>{t('Calibration Test Date')}</label>
               <input
                 type="date"
                 required
@@ -215,7 +350,9 @@ export const CalibrationModule: React.FC = () => {
               />
             </div>
             <div>
-              <label className={labelClass}>{t('Next Calibration Due Date')}</label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-slate-600">{t('Next Calibration Due Date')}</label>
+              </div>
               <input
                 type="date"
                 required
@@ -223,6 +360,30 @@ export const CalibrationModule: React.FC = () => {
                 onChange={(e) => setNextCalibrationDate(e.target.value)}
                 className={inputClass}
               />
+              {/* Quick Preset Buttons for Next Calibration Date */}
+              <div className="flex gap-1.5 mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => setNextDatePreset(180)}
+                  className="px-2 py-0.5 bg-surface-100 hover:bg-purple-50 text-purple-700 border border-surface-200 rounded text-[10px] font-semibold"
+                >
+                  +6 {t('Months')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNextDatePreset(365)}
+                  className="px-2 py-0.5 bg-surface-100 hover:bg-purple-50 text-purple-700 border border-surface-200 rounded text-[10px] font-semibold"
+                >
+                  +1 {t('Year')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNextDatePreset(730)}
+                  className="px-2 py-0.5 bg-surface-100 hover:bg-purple-50 text-purple-700 border border-surface-200 rounded text-[10px] font-semibold"
+                >
+                  +2 {t('Years')}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -231,17 +392,19 @@ export const CalibrationModule: React.FC = () => {
             <textarea
               rows={2}
               value={notes}
+              placeholder={t('e.g. Calibrated to ISO 9001 standards. Torque variance < 0.2%')}
               onChange={(e) => setNotes(e.target.value)}
               className={inputClass}
             />
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
-            <button type="button" onClick={() => setIsModalOpen(false)} className="btn-ghost">
+            <button type="button" onClick={() => setIsSubmitModalOpen(false)} className="btn-ghost">
               {t('Cancel')}
             </button>
             <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold shadow-sm">
-              {t('Record Calibration Certificate')}
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{t('Submit Certificate & End Calibration')}</span>
             </button>
           </div>
         </form>
@@ -250,3 +413,4 @@ export const CalibrationModule: React.FC = () => {
     </div>
   );
 };
+
