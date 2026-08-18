@@ -21,7 +21,7 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       calibrationsRaw,
       transactionsRaw,
       inventoryChecksRaw,
-      notifications,
+      notificationsRaw,
       auditLogsRaw,
     ] = await Promise.all([
       prisma.user.findMany(),
@@ -75,6 +75,97 @@ router.get('/initial-data', async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
       }),
     ]);
+
+    let notifications = notificationsRaw;
+    if (notifications.length === 0) {
+      let firstUser = users.length > 0 ? users[0] : null;
+      if (!firstUser) {
+        firstUser = await prisma.user.create({
+          data: { email: 'admin@warehouse.com', firstName: 'System', lastName: 'Admin', role: 'ADMIN' }
+        });
+      }
+
+      await prisma.notification.createMany({
+        data: [
+          {
+            userId: firstUser.id,
+            type: 'SERVICE',
+            title: 'Equipment Damage Dispatched to Repair',
+            message: 'DeWalt Rotary Hammer Drill (AST-POW-001) reported damaged with slipping chuck mechanism and dispatched to Bosch Repair Services.',
+            isRead: false,
+          },
+          {
+            userId: firstUser.id,
+            type: 'CALIBRATION',
+            title: 'Calibration Expiration Warning (Due in 14 Days)',
+            message: 'Fluke 87V Digital Multimeter (AST-MEAS-004) precision calibration expires on 2026-09-01. Please schedule vendor testing.',
+            isRead: false,
+          },
+          {
+            userId: firstUser.id,
+            type: 'OVERDUE',
+            title: 'Overdue Equipment Loan Alert',
+            message: 'Bosch Angle Grinder 4.5 inch (AST-POW-012) issued to John Doe is past its expected return date (2026-08-10).',
+            isRead: false,
+          },
+        ]
+      });
+
+      notifications = await prisma.notification.findMany({ orderBy: { createdAt: 'desc' } });
+    }
+
+    // Automated 30-day calibration expiration & overdue loan scanners
+    const now = new Date();
+    const targetUser = users.length > 0 ? users[0] : null;
+
+    if (targetUser) {
+      for (const cal of calibrationsRaw as any[]) {
+        if (cal.nextCalibrationDate && cal.asset) {
+          const nextDate = new Date(cal.nextCalibrationDate);
+          const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+          if (diffDays >= 0 && diffDays <= 30) {
+            const certNum = cal.certificateNumber || cal.asset.name;
+            const exists = notifications.some((n: any) => n.message.includes(certNum));
+            if (!exists) {
+              const daysLeft = Math.ceil(diffDays);
+              const createdNotif = await prisma.notification.create({
+                data: {
+                  userId: targetUser.id,
+                  type: 'CALIBRATION',
+                  title: `Calibration Expiration Warning (${cal.asset.name})`,
+                  message: `Precision calibration for ${cal.asset.name} (${certNum}) expires on ${cal.nextCalibrationDate.toISOString().slice(0, 10)} (due in ${daysLeft} days).`,
+                  isRead: false,
+                },
+              });
+              notifications.unshift(createdNotif);
+            }
+          }
+        }
+      }
+
+      for (const trx of transactionsRaw as any[]) {
+        if (trx.transactionType === 'ISSUE' && trx.returnDate && trx.asset?.status === 'ISSUED') {
+          const retDate = new Date(trx.returnDate);
+          if (retDate < now) {
+            const assetNum = trx.asset.assetNumber;
+            const exists = notifications.some((n: any) => n.message.includes(assetNum));
+            if (!exists) {
+              const empName = trx.employee ? `${trx.employee.firstName} ${trx.employee.lastName}` : 'Field Worker';
+              const createdNotif = await prisma.notification.create({
+                data: {
+                  userId: targetUser.id,
+                  type: 'OVERDUE',
+                  title: `Overdue Loan Alert (${trx.asset.name})`,
+                  message: `Equipment ${trx.asset.name} (${assetNum}) issued to ${empName} was expected back on ${retDate.toISOString().slice(0, 10)} and is past due.`,
+                  isRead: false,
+                },
+              });
+              notifications.unshift(createdNotif);
+            }
+          }
+        }
+      }
+    }
 
     // Format assets for frontend interface expectations
     const assets = assetsRaw.map((a: any) => {
@@ -421,6 +512,17 @@ router.post('/transactions/issue', async (req: Request, res: Response) => {
         },
         include: { asset: true, employee: true, project: true, performedBy: true },
       });
+
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'OVERDUE',
+          title: `Equipment Loan Issued: ${trx.asset.name}`,
+          message: `${trx.asset.name} (${trx.asset.assetNumber}) issued to ${trx.employee ? `${trx.employee.firstName} ${trx.employee.lastName}` : 'Field Staff'} until ${expectedReturnDate || 'Expected Return Date'}.`,
+          isRead: false,
+        },
+      });
+
       createdTransactions.push(trx);
     }
 
@@ -659,6 +761,19 @@ router.post('/service-orders', async (req: Request, res: Response) => {
       include: { asset: true, supplier: true },
     });
 
+    const user = await prisma.user.findFirst();
+    if (user) {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'SERVICE',
+          title: `Repair Service Dispatched: ${newOrder.asset.name}`,
+          message: `Equipment ${newOrder.asset.assetNumber} reported damaged and dispatched for repair. Description: ${problemDescription}`,
+          isRead: false,
+        },
+      });
+    }
+
     res.status(201).json(newOrder);
   } catch (error) {
     console.error('Error creating service order:', error);
@@ -725,6 +840,19 @@ router.post('/calibrations', async (req: Request, res: Response) => {
       where: { id: body.assetId },
       data: { status: 'AVAILABLE' },
     });
+
+    const user = await prisma.user.findFirst();
+    if (user) {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'CALIBRATION',
+          title: `Calibration Certificate Logged: ${newRecord.asset.name}`,
+          message: `Certificate #${newRecord.certificateNumber} logged for ${newRecord.asset.name} (${newRecord.result}). Next calibration due on ${newRecord.nextCalibrationDate.toISOString().slice(0, 10)}.`,
+          isRead: false,
+        },
+      });
+    }
 
     res.status(201).json(newRecord);
   } catch (error) {

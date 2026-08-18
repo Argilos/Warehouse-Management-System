@@ -129,8 +129,8 @@ export const Header: React.FC = () => {
                           key={n.id}
                           onClick={() => markNotificationAsRead(n.id)}
                           className={`p-3 text-xs cursor-pointer transition-colors ${n.isRead
-                              ? 'bg-white text-slate-400'
-                              : 'bg-brand-50 text-slate-700 hover:bg-brand-100'
+                            ? 'bg-white text-slate-400'
+                            : 'bg-brand-50 text-slate-700 hover:bg-brand-100'
                             }`}
                         >
                           <div className="flex items-center justify-between mb-1">
