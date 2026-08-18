@@ -78,6 +78,13 @@ export const CalibrationModule: React.FC = () => {
   const inputClass = 'w-full bg-white border border-surface-200 text-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all placeholder:text-slate-400';
   const labelClass = 'block text-xs font-semibold text-slate-600 mb-1';
 
+  const calibrationsDue30Days = calibrations.filter((cal) => {
+    if (!cal.nextCalibrationDate) return false;
+    const nextDate = new Date(cal.nextCalibrationDate);
+    const diffDays = (nextDate.getTime() - new Date().getTime()) / (1000 * 3600 * 24);
+    return diffDays <= 30;
+  });
+
   return (
     <div className="space-y-5">
 
@@ -89,7 +96,7 @@ export const CalibrationModule: React.FC = () => {
             <span>{t('Precision Calibration Tracking System')}</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            {t('Monitor calibration certificates, end active lab tests, attach certificate files, and set next calibration due dates.')}
+            {t('Showing tools due for calibration within 30 days. Full calibration history for each tool is accessible in Asset 360° Profile.')}
           </p>
         </div>
 
@@ -106,7 +113,12 @@ export const CalibrationModule: React.FC = () => {
 
       {/* Calibration Registry Table */}
       <div className="glass-panel p-5 space-y-4">
-        <h3 className="font-bold text-sm text-slate-800">{t('Calibration Test Records & Expirations')}</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-sm text-slate-800">{t('Tools Due for Calibration (Within 30 Days & Overdue)')}</h3>
+          <span className="text-xs font-semibold px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg">
+            {calibrationsDue30Days.length} {t('Action Required')}
+          </span>
+        </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -122,14 +134,16 @@ export const CalibrationModule: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-100 text-slate-700">
-              {calibrations.length === 0 ? (
+              {calibrationsDue30Days.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-slate-400">
-                    {t('No calibration records registered yet.')}
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
+                    <p className="font-semibold text-slate-700 text-sm">{t('All measuring tools are up to date!')}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{t('No tools are due for calibration in the next 30 days.')}</p>
                   </td>
                 </tr>
               ) : (
-                calibrations.map((cal) => {
+                calibrationsDue30Days.map((cal) => {
                   const nextDate = new Date(cal.nextCalibrationDate);
                   const diffDays = (nextDate.getTime() - new Date().getTime()) / (1000 * 3600 * 24);
                   const isExpiringSoon = diffDays >= 0 && diffDays <= 30;
