@@ -67,7 +67,7 @@ export const DashboardModule: React.FC = () => {
 
   const expiringCalibrations = Array.from(latestCalByAssetId.values()).filter(c => {
     const diffDays = (new Date(c.nextCalibrationDate).getTime() - Date.now()) / (1000 * 3600 * 24);
-    return diffDays <= 30;
+    return diffDays >= 0 && diffDays <= 30;
   });
 
   return (

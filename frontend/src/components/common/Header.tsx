@@ -65,7 +65,7 @@ export const Header: React.FC = () => {
             className="flex items-center gap-2 px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold text-xs shadow-sm transition-all active:scale-95"
           >
             <QrCode className="w-4 h-4" />
-            <span className="hidden md:inline">{t('header.scanToolQr')}</span>
+            <span className="hidden md:inline">{t('Scan Tool Qr')}</span>
           </button>
 
           {/* Global Search Bar */}

@@ -119,7 +119,14 @@ router.get('/initial-data', async (req: Request, res: Response) => {
     const targetUser = users.length > 0 ? users[0] : null;
 
     if (targetUser) {
+      const latestCalByAsset = new Map<string, any>();
       for (const cal of calibrationsRaw as any[]) {
+        if (cal.assetId && !latestCalByAsset.has(cal.assetId)) {
+          latestCalByAsset.set(cal.assetId, cal);
+        }
+      }
+
+      for (const cal of Array.from(latestCalByAsset.values())) {
         if (cal.nextCalibrationDate && cal.asset) {
           const nextDate = new Date(cal.nextCalibrationDate);
           const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);

@@ -39,7 +39,7 @@ export const CalibrationModule: React.FC = () => {
   const handleOpenSubmitModal = (preselectedId?: string, certNo?: string) => {
     const randCert = certNo || `CERT-FLK-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     setCertificateNumber(randCert);
-    const targetId = preselectedId || (measuringAssets.length > 0 ? measuringAssets[0].id : '');
+    const targetId = preselectedId || (assets.length > 0 ? assets[0].id : '');
     setSelectedAssetId(targetId);
     if (suppliers.length > 0) setProviderId(suppliers[0].id);
     setNotes('');
@@ -85,9 +85,8 @@ export const CalibrationModule: React.FC = () => {
 
   const now = new Date();
 
-  // Map each assetId to its LATEST calibration record (highest nextCalibrationDate or latest calibrationDate)
+  // 1. Group calibrations by assetId to evaluate ONLY the latest calibration record for each asset
   const latestCalByAssetId = new Map<string, typeof calibrations[0]>();
-
   calibrations.forEach((cal) => {
     const existing = latestCalByAssetId.get(cal.assetId);
     if (!existing) {
@@ -101,51 +100,61 @@ export const CalibrationModule: React.FC = () => {
     }
   });
 
-  // Build the list of tools requiring calibration action (latest calibration due within 30 days, overdue, or IN_CALIBRATION)
-  const calibrationsDue30Days: Array<{
-    id: string;
-    assetId: string;
-    assetName: string;
-    assetNumber: string;
-    providerName: string;
-    calibrationDate: string;
-    nextCalibrationDate: string;
-    certificateNumber: string;
-    result: CalibrationResult;
-    documentUrl?: string;
-    notes?: string;
-  }> = [];
-
-  assets.forEach((ast) => {
-    const latestCal = latestCalByAssetId.get(ast.id);
-
-    if (latestCal) {
-      const nextDate = new Date(latestCal.nextCalibrationDate);
-      const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
-      if (ast.status === 'IN_CALIBRATION' || diffDays <= 30) {
-        calibrationsDue30Days.push(latestCal);
-      }
-    } else {
-      const nextDateStr = ast.nextCalibrationDate;
-      const nextDate = nextDateStr ? new Date(nextDateStr) : null;
-      const diffDays = nextDate ? (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24) : 999;
-
-      if (ast.status === 'IN_CALIBRATION' || diffDays <= 30) {
-        calibrationsDue30Days.push({
-          id: `live-asset-cal-${ast.id}`,
-          assetId: ast.id,
-          assetName: ast.name,
-          assetNumber: ast.assetNumber,
-          providerName: ast.supplierName || 'Fluke Calibration Services',
-          calibrationDate: ast.lastServiceDate || ast.purchaseDate,
-          nextCalibrationDate: ast.nextCalibrationDate || now.toISOString().slice(0, 10),
-          certificateNumber: `CERT-${ast.assetNumber}`,
-          result: 'PASS' as CalibrationResult,
-          notes: ast.status === 'IN_CALIBRATION' ? 'Tool currently in lab undergoing calibration.' : 'Calibration due date approaching.',
-        });
-      }
-    }
+  // 2. Filter ONLY the latest records where nextCalibrationDate is <= 30 days away or overdue
+  const recordsDue = Array.from(latestCalByAssetId.values()).filter((cal) => {
+    if (!cal.nextCalibrationDate) return false;
+    const nextDate = new Date(cal.nextCalibrationDate);
+    const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+    return diffDays <= 30;
   });
+
+  // 3. Gather live assets with nextCalibrationDate due within 30 days or IN_CALIBRATION status
+  const assetDueItems = assets
+    .filter((a) => {
+      if (a.nextCalibrationDate) {
+        const nextDate = new Date(a.nextCalibrationDate);
+        const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+        if (diffDays > 30 && a.status !== 'IN_CALIBRATION') return false;
+        if (diffDays <= 30) return true;
+      }
+      return a.status === 'IN_CALIBRATION';
+    })
+    .map((a) => {
+      const existingCal = latestCalByAssetId.get(a.id);
+      if (existingCal) {
+        const nextDate = new Date(existingCal.nextCalibrationDate);
+        const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+        if (diffDays > 30 && a.status !== 'IN_CALIBRATION') return null;
+        return existingCal;
+      }
+      return {
+        id: `live-asset-cal-${a.id}`,
+        assetId: a.id,
+        assetName: a.name,
+        assetNumber: a.assetNumber,
+        providerName: a.supplierName || 'Fluke Calibration Services',
+        calibrationDate: a.lastServiceDate || a.purchaseDate,
+        nextCalibrationDate: a.nextCalibrationDate || new Date().toISOString().slice(0, 10),
+        certificateNumber: `CERT-${a.assetNumber}`,
+        result: 'PASS' as CalibrationResult,
+        notes: a.status === 'IN_CALIBRATION' ? 'Tool currently in lab undergoing calibration.' : 'Calibration due date approaching.',
+      };
+    })
+    .filter(Boolean) as typeof calibrations;
+
+  // Combine and deduplicate by assetId, excluding any asset whose latest calibration is > 30 days in future
+  const calibrationsDue30Days = Array.from(
+    new Map(
+      [...recordsDue, ...assetDueItems]
+        .filter((item) => {
+          if (!item.nextCalibrationDate) return false;
+          const nextDate = new Date(item.nextCalibrationDate);
+          const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+          return diffDays <= 30;
+        })
+        .map((item) => [item.assetId, item])
+    ).values()
+  );
 
   return (
     <div className="space-y-5">
@@ -271,7 +280,7 @@ export const CalibrationModule: React.FC = () => {
               onChange={(e) => setSelectedAssetId(e.target.value)}
               className={inputClass}
             >
-              {measuringAssets.map((a) => (
+              {assets.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name} ({a.assetNumber}) {a.status === 'IN_CALIBRATION' ? `[${t('IN CALIBRATION LAB')}]` : ''}
                 </option>
