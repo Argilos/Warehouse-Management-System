@@ -83,10 +83,36 @@ export const QRScannerModule: React.FC = () => {
     }
   };
 
-  const handleQuickReturn = (ast: Asset) => {
-    returnAsset(ast.id, 'GOOD', t('Returned via mobile QR scan action'));
-    setActionSuccessMsg(`✓ ${ast.name} ${t('successfully returned to warehouse.')}`);
-    setMatchedAsset({ ...ast, status: 'AVAILABLE', holderEmployeeId: undefined, holderEmployeeName: undefined });
+  // Inline Return Modal state
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [returnCondition, setReturnCondition] = useState('GOOD');
+  const [returnNotes, setReturnNotes] = useState('');
+
+  const handleOpenReturnModal = () => {
+    setReturnCondition('GOOD');
+    setReturnNotes('');
+    setIsReturnModalOpen(true);
+  };
+
+  const handleReturnSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!matchedAsset) return;
+    setIsSubmitting(true);
+    try {
+      await returnAsset(
+        matchedAsset.id,
+        returnCondition,
+        returnNotes || t('Returned via mobile QR scan action')
+      );
+      const newStatus = returnCondition === 'DAMAGED' ? 'DAMAGED' : 'AVAILABLE';
+      setActionSuccessMsg(`✓ ${matchedAsset.name} ${t('successfully returned to warehouse.')}`);
+      setMatchedAsset({ ...matchedAsset, status: newStatus, holderEmployeeId: undefined, holderEmployeeName: undefined });
+      setIsReturnModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleReportDamage = (ast: Asset) => {
@@ -282,7 +308,7 @@ export const QRScannerModule: React.FC = () => {
 
                   {matchedAsset.status === 'ISSUED' && (
                     <button
-                      onClick={() => handleQuickReturn(matchedAsset)}
+                      onClick={handleOpenReturnModal}
                       className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center justify-between transition-all shadow-sm"
                     >
                       <span>{t('Return Tool to Warehouse')}</span>
@@ -416,6 +442,72 @@ export const QRScannerModule: React.FC = () => {
             >
               <ArrowLeftRight className="w-4 h-4" />
               {isSubmitting ? t('Issuing...') : t('Confirm Issue')}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── Inline Return Modal ── */}
+      <Modal
+        isOpen={isReturnModalOpen}
+        onClose={() => setIsReturnModalOpen(false)}
+        title={`${t('Return Tool to Warehouse')} — ${matchedAsset?.name || ''}`}
+      >
+        <form onSubmit={handleReturnSubmit} className="space-y-4 text-xs">
+
+          {/* Asset & Custody Recap */}
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between">
+            <div>
+              <p className="font-extrabold text-slate-800 text-sm">{matchedAsset?.name}</p>
+              <p className="text-[11px] text-emerald-800 font-mono">{matchedAsset?.assetNumber} • {matchedAsset?.qrCode}</p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 block">{t('Current Custody')}</span>
+              <span className="font-bold text-emerald-700 text-xs">{matchedAsset?.holderEmployeeName || t('Field Assignment')}</span>
+            </div>
+          </div>
+
+          {/* Returned Condition Grade */}
+          <div>
+            <label className={labelClass}>{t('Returned Tool Condition Grade')}</label>
+            <select
+              value={returnCondition}
+              onChange={(e) => setReturnCondition(e.target.value)}
+              className={inputClass}
+            >
+              <option value="GOOD">{t('GOOD (Excellent condition, clean)')}</option>
+              <option value="MINOR_WEAR">{t('MINOR WEAR (Standard field wear)')}</option>
+              <option value="DAMAGED">{t('DAMAGED (Requires service order repair)')}</option>
+            </select>
+          </div>
+
+          {/* Return Notes */}
+          <div>
+            <label className={labelClass}>{t('Return Notes / Inspection Remarks')}</label>
+            <textarea
+              rows={3}
+              placeholder={t('e.g. All accessories present. Cleaned and returned to warehouse storage.')}
+              value={returnNotes}
+              onChange={(e) => setReturnNotes(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
+            <button
+              type="button"
+              onClick={() => setIsReturnModalOpen(false)}
+              className="btn-ghost"
+            >
+              {t('Cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold shadow-sm transition-all"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              {isSubmitting ? t('Processing...') : t('Process Return')}
             </button>
           </div>
         </form>
