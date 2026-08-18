@@ -80,6 +80,7 @@ interface WarehouseStore {
   // Inventory Audit Actions
   createInventoryCheck: (title: string) => Promise<void>;
   verifyInventoryItem: (checkId: string, assetId: string, condition: 'GOOD' | 'DAMAGED' | 'MISSING', notes?: string) => Promise<void>;
+  completeInventoryCheck: (checkId: string) => Promise<void>;
 
   // Notification & Audit
   markNotificationAsRead: (id: string) => Promise<void>;
@@ -378,6 +379,17 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
       await get().fetchInitialData();
     } catch (err) {
       console.error('Error verifying inventory item:', err);
+    }
+  },
+
+  completeInventoryCheck: async (checkId) => {
+    try {
+      await apiFetch(`/inventory-checks/${checkId}/complete`, {
+        method: 'PUT',
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error completing inventory check:', err);
     }
   },
 

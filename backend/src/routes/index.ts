@@ -800,6 +800,20 @@ router.post('/inventory-checks/:id/verify', async (req: Request, res: Response) 
   }
 });
 
+router.put('/inventory-checks/:id/complete', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updated = await prisma.inventoryCheck.update({
+      where: { id },
+      data: { status: 'COMPLETED' },
+    });
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to complete inventory check' });
+  }
+});
+
+
 // ─── NOTIFICATIONS ───────────────────────────────────────────────────────────
 router.put('/notifications/:id/read', async (req: Request, res: Response) => {
   try {
