@@ -119,19 +119,7 @@ export const ToolIssuingModule: React.FC = () => {
             className="btn-primary"
           >
             <ArrowLeftRight className="w-4 h-4" />
-            <span>{t('Issue Single Tool')}</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (employees.length > 0) setSelectedEmployeeId(employees[0].id);
-              if (availableToolBoxes.length > 0) setSelectedToolBoxId(availableToolBoxes[0].id);
-              setIsIssueBoxModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
-          >
-            <Package className="w-4 h-4" />
-            <span>{t('Issue Tool Box Kit')}</span>
+            <span>{t('Issue Equipment')}</span>
           </button>
 
           <button
@@ -447,89 +435,6 @@ export const ToolIssuingModule: React.FC = () => {
             </button>
             <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all active:scale-95">
               {t('Process Return')}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Issue Tool Box Kit Modal */}
-      <Modal isOpen={isIssueBoxModalOpen} onClose={() => setIsIssueBoxModalOpen(false)} title={t('Issue Tool Box Kit to Employee')}>
-        <form onSubmit={handleConfirmIssueToolBox} className="space-y-4 text-xs">
-          <div>
-            <label className={labelClass}>{t('Select Tool Box Kit')}</label>
-            <select
-              value={selectedToolBoxId}
-              onChange={(e) => setSelectedToolBoxId(e.target.value)}
-              className={inputClass}
-            >
-              {availableToolBoxes.length === 0 ? (
-                <option value="">{t('No unassigned tool boxes available.')}</option>
-              ) : (
-                availableToolBoxes.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.boxNumber}) - {b.items.length} {t('items')}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
-
-          <div>
-            <label className={labelClass}>{t('Select Employee Recipient')}</label>
-            <select
-              value={selectedEmployeeId}
-              onChange={(e) => setSelectedEmployeeId(e.target.value)}
-              className={inputClass}
-            >
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.firstName} {e.lastName} ({e.employeeNumber}) - {e.department}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className={labelClass}>{t('Assign to Project (Optional)')}</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">{t('No Specific Project (General Field Assignment)')}</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.projectCode} - {p.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className={labelClass}>{t('Expected Return Date')}</label>
-            <input
-              type="date"
-              value={expectedReturnDate}
-              onChange={(e) => setExpectedReturnDate(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <label className={labelClass}>{t('Issuing Notes / Job Mission')}</label>
-            <textarea
-              rows={2}
-              placeholder={t('e.g. Assigned for Field Maintenance Mission')}
-              value={checkoutNotes}
-              onChange={(e) => setCheckoutNotes(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
-            <button type="button" onClick={() => setIsIssueBoxModalOpen(false)} className="btn-ghost">
-              {t('Cancel')}
-            </button>
-            <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all active:scale-95">
-              {t('Confirm Issue Tool Box')}
             </button>
           </div>
         </form>

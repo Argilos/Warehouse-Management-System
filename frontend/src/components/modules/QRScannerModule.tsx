@@ -313,19 +313,8 @@ export const QRScannerModule: React.FC = () => {
               </div>
 
               {/* Tool Box Field Actions */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {matchedToolBox.status === 'UNASSIGNED' ? (
-                  <button
-                    onClick={() => {
-                      setCheckoutEmployeeId(employees[0]?.id || '');
-                      setIsCheckoutModalOpen(true);
-                    }}
-                    className="p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center justify-between transition-all shadow-sm"
-                  >
-                    <span>{t('Issue Tool Box Kit')}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {matchedToolBox.status === 'ASSIGNED' && (
                   <button
                     onClick={async () => {
                       await returnToolBox(matchedToolBox.id);

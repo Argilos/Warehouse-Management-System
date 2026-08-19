@@ -149,19 +149,11 @@ export const ToolBoxModule: React.FC = () => {
 
                 <div className="space-y-2 pt-3 border-t border-surface-100">
                   {/* Action Buttons */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {tb.status === 'UNASSIGNED' ? (
-                      <button
-                        onClick={() => handleOpenIssueModal(tb)}
-                        className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded font-semibold text-xs flex items-center justify-center gap-1 shadow-sm transition-all"
-                      >
-                        <ArrowLeftRight className="w-3.5 h-3.5" />
-                        <span>{t('Issue Kit')}</span>
-                      </button>
-                    ) : (
+                  <div className="flex items-center gap-2">
+                    {tb.status === 'ASSIGNED' && (
                       <button
                         onClick={() => handleConfirmReturnBox(tb)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-semibold text-xs flex items-center justify-center gap-1 shadow-sm transition-all"
+                        className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-semibold text-xs flex items-center justify-center gap-1 shadow-sm transition-all"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>{t('Return Kit')}</span>
@@ -171,11 +163,11 @@ export const ToolBoxModule: React.FC = () => {
                     {(activeRole === 'ADMIN' || activeRole === 'WAREHOUSE_MANAGER') && (
                       <button
                         onClick={() => handleDismantleBox(tb)}
-                        className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded font-semibold text-xs flex items-center justify-center gap-1 transition-all"
+                        className="flex-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded font-semibold text-xs flex items-center justify-center gap-1 transition-all"
                         title={t('Dismantle Tool Box kit and release items')}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span>{t('Dismantle')}</span>
+                        <span>{t('Dismantle Kit')}</span>
                       </button>
                     )}
                   </div>
