@@ -236,8 +236,8 @@ export const CalibrationModule: React.FC = () => {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${cal.result === 'PASS' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                            cal.result === 'CONDITIONAL' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                              'bg-red-50 text-red-700 border-red-200'
+                          cal.result === 'CONDITIONAL' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            'bg-red-50 text-red-700 border-red-200'
                           }`}>
                           {t(cal.result)}
                         </span>

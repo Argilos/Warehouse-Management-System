@@ -119,33 +119,49 @@ router.get('/initial-data', async (req: Request, res: Response) => {
     const targetUser = users.length > 0 ? users[0] : null;
 
     if (targetUser) {
-      const latestCalByAsset = new Map<string, any>();
+      const dueAssetMap = new Map<string, { assetName: string; certNum: string; nextCalibrationDate: Date }>();
+
       for (const cal of calibrationsRaw as any[]) {
-        if (cal.assetId && !latestCalByAsset.has(cal.assetId)) {
-          latestCalByAsset.set(cal.assetId, cal);
+        if (cal.assetId && cal.nextCalibrationDate && cal.asset && !dueAssetMap.has(cal.assetId)) {
+          dueAssetMap.set(cal.assetId, {
+            assetName: cal.asset.name,
+            certNum: cal.certificateNumber || cal.asset.assetNumber,
+            nextCalibrationDate: new Date(cal.nextCalibrationDate),
+          });
         }
       }
 
-      for (const cal of Array.from(latestCalByAsset.values())) {
-        if (cal.nextCalibrationDate && cal.asset) {
-          const nextDate = new Date(cal.nextCalibrationDate);
-          const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
-          if (diffDays >= 0 && diffDays <= 30) {
-            const certNum = cal.certificateNumber || cal.asset.name;
-            const exists = notifications.some((n: any) => n.message.includes(certNum));
-            if (!exists) {
-              const daysLeft = Math.ceil(diffDays);
-              const createdNotif = await prisma.notification.create({
-                data: {
-                  userId: targetUser.id,
-                  type: 'CALIBRATION',
-                  title: `Calibration Expiration Warning (${cal.asset.name})`,
-                  message: `Precision calibration for ${cal.asset.name} (${certNum}) expires on ${cal.nextCalibrationDate.toISOString().slice(0, 10)} (due in ${daysLeft} days).`,
-                  isRead: false,
-                },
-              });
-              notifications.unshift(createdNotif);
-            }
+      for (const asset of assetsRaw as any[]) {
+        if (asset.nextCalibrationDate && !dueAssetMap.has(asset.id)) {
+          dueAssetMap.set(asset.id, {
+            assetName: asset.name,
+            certNum: `CERT-${asset.assetNumber}`,
+            nextCalibrationDate: new Date(asset.nextCalibrationDate),
+          });
+        }
+      }
+
+      for (const item of Array.from(dueAssetMap.values())) {
+        const diffDays = (item.nextCalibrationDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+        if (diffDays >= 0 && diffDays <= 30) {
+          const exists = notifications.some(
+            (n: any) =>
+              n.type === 'CALIBRATION' &&
+              n.title.includes('Expiration Warning') &&
+              (n.message.includes(item.assetName) || n.message.includes(item.certNum))
+          );
+          if (!exists) {
+            const daysLeft = Math.ceil(diffDays);
+            const createdNotif = await prisma.notification.create({
+              data: {
+                userId: targetUser.id,
+                type: 'CALIBRATION',
+                title: `Calibration Expiration Warning (${item.assetName})`,
+                message: `Precision calibration for ${item.assetName} (${item.certNum}) expires on ${item.nextCalibrationDate.toISOString().slice(0, 10)} (due in ${daysLeft} days).`,
+                isRead: false,
+              },
+            });
+            notifications.unshift(createdNotif);
           }
         }
       }

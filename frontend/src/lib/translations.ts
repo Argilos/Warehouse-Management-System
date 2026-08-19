@@ -32,6 +32,7 @@ export const translations: Record<Language, Record<string, string>> = {
         'header.systemAlerts': 'Sistemska upozorenja i obavijesti',
         'header.noNotifications': 'Nema aktivnih obavijesti',
         'header.scanToolQr': 'Skeniraj QR Kod Alata',
+        'Scan Tool Qr': 'Skeniraj QR Kod Alata',
         'header.searchPlaceholder': 'Pretraži alate, serijske brojeve, QR kodove, radnike...',
         'header.subtitle': 'Upravljanje skladištem i opremom',
         'Test Alert': 'Testno upozorenje',
