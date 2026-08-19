@@ -281,6 +281,7 @@ router.get('/initial-data', async (req: Request, res: Response) => {
     const formattedToolBoxes = toolBoxesRaw.map((tb: any) => ({
       id: tb.id,
       boxNumber: tb.boxNumber,
+      qrCode: `QR-${tb.boxNumber}`,
       name: tb.name,
       employeeId: tb.employeeId || undefined,
       employeeName: tb.employee ? `${tb.employee.firstName} ${tb.employee.lastName}` : undefined,
@@ -905,6 +906,134 @@ router.post('/toolboxes', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error creating toolbox:', error);
     res.status(500).json({ error: 'Failed to create toolbox' });
+  }
+});
+
+router.post('/toolboxes/issue', async (req: Request, res: Response) => {
+  try {
+    const { boxId, employeeId, notes } = req.body;
+
+    const box = await prisma.toolBox.findUnique({
+      where: { id: boxId },
+      include: { items: true },
+    });
+    if (!box) return res.status(404).json({ error: 'ToolBox not found' });
+
+    await prisma.toolBox.update({
+      where: { id: boxId },
+      data: {
+        status: 'ASSIGNED',
+        employeeId,
+        assignedDate: new Date(),
+      },
+    });
+
+    const assetIds = box.items.map((i) => i.assetId);
+    if (assetIds.length > 0) {
+      await prisma.asset.updateMany({
+        where: { id: { in: assetIds } },
+        data: { status: 'ISSUED' },
+      });
+
+      for (const assetId of assetIds) {
+        await prisma.employeeAsset.create({
+          data: {
+            employeeId,
+            assetId,
+            assignmentType: 'TOOLBOX_KIT',
+            assignedDate: new Date(),
+            condition: 'EXCELLENT',
+            notes: notes || `Issued in Tool Box ${box.boxNumber}`,
+          },
+        });
+      }
+    }
+
+    res.json({ message: 'ToolBox issued successfully' });
+  } catch (error) {
+    console.error('Error issuing toolbox:', error);
+    res.status(500).json({ error: 'Failed to issue toolbox' });
+  }
+});
+
+router.post('/toolboxes/return', async (req: Request, res: Response) => {
+  try {
+    const { boxId } = req.body;
+
+    const box = await prisma.toolBox.findUnique({
+      where: { id: boxId },
+      include: { items: true },
+    });
+    if (!box) return res.status(404).json({ error: 'ToolBox not found' });
+
+    await prisma.toolBox.update({
+      where: { id: boxId },
+      data: {
+        status: 'UNASSIGNED',
+        employeeId: null,
+        assignedDate: null,
+      },
+    });
+
+    const assetIds = box.items.map((i) => i.assetId);
+    if (assetIds.length > 0) {
+      await prisma.asset.updateMany({
+        where: { id: { in: assetIds } },
+        data: { status: 'AVAILABLE' },
+      });
+
+      await prisma.employeeAsset.updateMany({
+        where: { assetId: { in: assetIds }, returnedDate: null },
+        data: { returnedDate: new Date() },
+      });
+    }
+
+    res.json({ message: 'ToolBox returned successfully' });
+  } catch (error) {
+    console.error('Error returning toolbox:', error);
+    res.status(500).json({ error: 'Failed to return toolbox' });
+  }
+});
+
+router.post('/toolboxes/:id/dismantle', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const box = await prisma.toolBox.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    if (!box) return res.status(404).json({ error: 'ToolBox not found' });
+
+    const assetIds = box.items.map((i) => i.assetId);
+
+    // Remove toolbox items
+    await prisma.toolBoxItem.deleteMany({
+      where: { toolBoxId: id },
+    });
+
+    // Mark contained assets AVAILABLE
+    if (assetIds.length > 0) {
+      await prisma.asset.updateMany({
+        where: { id: { in: assetIds } },
+        data: { status: 'AVAILABLE' },
+      });
+
+      await prisma.employeeAsset.updateMany({
+        where: { assetId: { in: assetIds }, returnedDate: null },
+        data: { returnedDate: new Date() },
+      });
+    }
+
+    // Delete the ToolBox
+    await prisma.toolBox.delete({
+      where: { id },
+    });
+
+    res.json({ message: 'ToolBox dismantled successfully' });
+  } catch (error) {
+    console.error('Error dismantling toolbox:', error);
+    res.status(500).json({ error: 'Failed to dismantle toolbox' });
   }
 });
 

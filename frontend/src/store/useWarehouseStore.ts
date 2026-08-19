@@ -81,6 +81,9 @@ interface WarehouseStore {
 
   // ToolBox Actions
   createToolBox: (boxNumber: string, name: string, assetIds: string[], employeeId?: string) => Promise<void>;
+  issueToolBox: (boxId: string, employeeId: string, projectId?: string, expectedReturnDate?: string, notes?: string) => Promise<void>;
+  returnToolBox: (boxId: string, condition?: string, notes?: string) => Promise<void>;
+  dismantleToolBox: (boxId: string) => Promise<void>;
 
   // Supplier Actions
   addSupplier: (supplier: Omit<Supplier, 'id'>) => Promise<void>;
@@ -434,6 +437,41 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
       await get().fetchInitialData();
     } catch (err) {
       console.error('Error creating toolbox:', err);
+    }
+  },
+
+  issueToolBox: async (boxId, employeeId, projectId, expectedReturnDate, notes) => {
+    try {
+      await apiFetch('/toolboxes/issue', {
+        method: 'POST',
+        body: JSON.stringify({ boxId, employeeId, projectId, expectedReturnDate, notes }),
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error issuing toolbox:', err);
+    }
+  },
+
+  returnToolBox: async (boxId, condition, notes) => {
+    try {
+      await apiFetch('/toolboxes/return', {
+        method: 'POST',
+        body: JSON.stringify({ boxId, condition, notes }),
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error returning toolbox:', err);
+    }
+  },
+
+  dismantleToolBox: async (boxId) => {
+    try {
+      await apiFetch(`/toolboxes/${boxId}/dismantle`, {
+        method: 'POST',
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error dismantling toolbox:', err);
     }
   },
 

@@ -102,6 +102,7 @@ export interface AssetTransaction {
 export interface ToolBox {
   id: string;
   boxNumber: string;
+  qrCode?: string;
   name: string;
   employeeId?: string;
   employeeName?: string;

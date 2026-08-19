@@ -3,21 +3,22 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { useLanguageStore } from '../../store/useLanguageStore';
 import { Modal } from '../common/Modal';
-import { Asset } from '../../types';
+import { Asset, ToolBox } from '../../types';
 import {
   QrCode, Camera, ArrowLeftRight, Wrench, ShieldAlert,
-  CheckCircle2, ArrowRight, RefreshCw, Sparkles, User, FolderOpen
+  CheckCircle2, ArrowRight, RefreshCw, Sparkles, User, FolderOpen, Box, Trash2, Package
 } from 'lucide-react';
 
 export const QRScannerModule: React.FC = () => {
   const {
-    assets, employees, projects, activeRole, returnAsset,
-    issueAssets, createServiceOrder, setSelectedAssetFor360
+    assets, employees, projects, toolBoxes, activeRole, returnAsset,
+    issueAssets, issueToolBox, returnToolBox, dismantleToolBox, createServiceOrder, setSelectedAssetFor360
   } = useWarehouseStore();
   const { t } = useLanguageStore();
 
   const [scannedResult, setScannedResult] = useState<string | null>(null);
   const [matchedAsset, setMatchedAsset] = useState<Asset | null>(null);
+  const [matchedToolBox, setMatchedToolBox] = useState<ToolBox | null>(null);
   const [isScanningCamera, setIsScanningCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
@@ -47,8 +48,11 @@ export const QRScannerModule: React.FC = () => {
     }
 
     setScannedResult(code);
-    const found = assets.find((a) => a.qrCode === code || a.assetNumber === code);
-    setMatchedAsset(found || null);
+    const foundAsset = assets.find((a) => a.qrCode === code || a.assetNumber === code);
+    const foundBox = toolBoxes.find((b) => (b.qrCode && b.qrCode === code) || b.boxNumber === code || `QR-${b.boxNumber}` === code);
+
+    setMatchedAsset(foundAsset || null);
+    setMatchedToolBox(foundBox || null);
     setActionSuccessMsg(null);
 
     if (html5QrcodeRef.current && html5QrcodeRef.current.isScanning) {
@@ -218,19 +222,25 @@ export const QRScannerModule: React.FC = () => {
             <span className="font-medium">{t('Desktop Demo Shortcuts (Click to simulate scanning physical QR tag):')}</span>
           </div>
           <div className="flex flex-wrap justify-center gap-2">
-            {assets.length === 0 ? (
-              <p className="text-xs text-slate-400">{t('No registered assets available to scan.')}</p>
-            ) : (
-              assets.map((ast) => (
-                <button
-                  key={ast.id}
-                  onClick={() => handleScanSuccess(ast.qrCode)}
-                  className="px-3 py-1.5 bg-surface-50 hover:bg-brand-50 text-brand-700 rounded-lg text-xs font-mono border border-surface-200 hover:border-brand-200 transition-all"
-                >
-                  {ast.qrCode} ({ast.name.slice(0, 14)}...)
-                </button>
-              ))
-            )}
+            {assets.slice(0, 4).map((ast) => (
+              <button
+                key={ast.id}
+                onClick={() => handleScanSuccess(ast.qrCode)}
+                className="px-3 py-1.5 bg-surface-50 hover:bg-brand-50 text-brand-700 rounded-lg text-xs font-mono border border-surface-200 hover:border-brand-200 transition-all"
+              >
+                {ast.qrCode} ({ast.name.slice(0, 14)}...)
+              </button>
+            ))}
+            {toolBoxes.map((tb) => (
+              <button
+                key={tb.id}
+                onClick={() => handleScanSuccess(tb.qrCode || `QR-${tb.boxNumber}`)}
+                className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-mono border border-purple-200 transition-all flex items-center gap-1"
+              >
+                <Box className="w-3 h-3 text-purple-600" />
+                <span>{tb.qrCode || `QR-${tb.boxNumber}`} ({tb.name.slice(0, 14)}...)</span>
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -248,25 +258,106 @@ export const QRScannerModule: React.FC = () => {
         </div>
       )}
 
-      {/* Scanned Asset Action Profile Card */}
+      {/* Scanned Action Profile Card */}
       {scannedResult && (
         <div className="glass-panel p-6 space-y-5 border-2 border-brand-200">
           <div className="flex items-center justify-between border-b border-surface-200 pb-3">
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 bg-brand-50 text-brand-700 border border-brand-200 rounded text-[10px] font-mono font-bold">
-                {t('SCANNED QR TOKEN')}
+                {matchedToolBox ? t('SCANNED TOOL BOX KIT QR') : t('SCANNED ASSET QR TOKEN')}
               </span>
               <span className="font-mono text-xs text-slate-800 font-bold">{scannedResult}</span>
             </div>
             <button
-              onClick={() => { setScannedResult(null); setMatchedAsset(null); setActionSuccessMsg(null); }}
+              onClick={() => { setScannedResult(null); setMatchedAsset(null); setMatchedToolBox(null); setActionSuccessMsg(null); }}
               className="text-xs text-slate-400 hover:text-slate-600"
             >
               {t('Clear Result')}
             </button>
           </div>
 
-          {matchedAsset ? (
+          {/* Render Tool Box Kit Card if matched */}
+          {matchedToolBox ? (
+            <div className="space-y-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-purple-50 rounded-xl border border-purple-200">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-purple-700">{matchedToolBox.boxNumber}</span>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${matchedToolBox.status === 'ASSIGNED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                      {t(matchedToolBox.status)}
+                    </span>
+                  </div>
+                  <h3 className="font-extrabold text-base text-slate-800 mt-1 flex items-center gap-2">
+                    <Box className="w-5 h-5 text-purple-600" />
+                    <span>{matchedToolBox.name}</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{t('Includes')} {matchedToolBox.items.length} {t('serialized tools')}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase">{t('Assigned Technician')}</p>
+                  <p className="font-bold text-purple-700 text-xs">{matchedToolBox.employeeName || t('Unassigned')}</p>
+                </div>
+              </div>
+
+              {/* Kit Items List */}
+              <div className="p-3 bg-surface-50 rounded-xl border border-surface-200 space-y-2">
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">{t('Included Kit Components')}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                  {matchedToolBox.items.map(item => (
+                    <div key={item.id} className="p-2 bg-white rounded border border-surface-200 text-xs flex items-center justify-between">
+                      <span className="font-semibold text-slate-800">{item.name}</span>
+                      <span className="font-mono text-[10px] text-slate-500">{item.assetNumber}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tool Box Field Actions */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {matchedToolBox.status === 'UNASSIGNED' ? (
+                  <button
+                    onClick={() => {
+                      setCheckoutEmployeeId(employees[0]?.id || '');
+                      setIsCheckoutModalOpen(true);
+                    }}
+                    className="p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center justify-between transition-all shadow-sm"
+                  >
+                    <span>{t('Issue Tool Box Kit')}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      await returnToolBox(matchedToolBox.id);
+                      setActionSuccessMsg(`✓ ${t('Tool Box Kit')} ${matchedToolBox.name} ${t('returned to warehouse stock.')}`);
+                      setMatchedToolBox({ ...matchedToolBox, status: 'UNASSIGNED', employeeId: undefined, employeeName: undefined });
+                    }}
+                    className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center justify-between transition-all shadow-sm"
+                  >
+                    <span>{t('Return Tool Box Kit')}</span>
+                    <CheckCircle2 className="w-4 h-4" />
+                  </button>
+                )}
+
+                {(activeRole === 'ADMIN' || activeRole === 'WAREHOUSE_MANAGER') && (
+                  <button
+                    onClick={async () => {
+                      if (window.confirm(`${t('Dismantle Tool Box')} ${matchedToolBox.name}? ${t('Items will be released back to warehouse stock as individual tools.')}`)) {
+                        await dismantleToolBox(matchedToolBox.id);
+                        setActionSuccessMsg(`✓ ${t('Tool Box Kit')} ${matchedToolBox.name} ${t('successfully dismantled.')}`);
+                        setScannedResult(null);
+                        setMatchedToolBox(null);
+                      }
+                    }}
+                    className="p-3 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-xl text-xs font-semibold flex items-center justify-between transition-all"
+                  >
+                    <span>{t('Dismantle Tool Box')}</span>
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : matchedAsset ? (
             <div className="space-y-5">
 
               {/* Asset Header Info */}
