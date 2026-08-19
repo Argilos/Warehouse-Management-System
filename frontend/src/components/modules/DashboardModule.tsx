@@ -4,7 +4,7 @@ import { useLanguageStore } from '../../store/useLanguageStore';
 import { StatCard } from '../common/StatCard';
 import { formatCurrency } from '../../utils/depreciation';
 import {
-  PackageCheck, CheckCircle2, ArrowLeftRight, Wrench, Gauge,
+  PackageCheck, CheckCircle2, ArrowLeftRight, Wrench, CalendarClock, Gauge,
   DollarSign, AlertTriangle, Clock, QrCode, ShieldAlert, ArrowRight
 } from 'lucide-react';
 import {
@@ -24,7 +24,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export const DashboardModule: React.FC = () => {
   const {
-    assets, serviceOrders, calibrations, transactions, employees,
+    assets, serviceOrders, calibrations, maintenanceTasks, transactions, employees,
     setActiveModule, setSelectedAssetFor360
   } = useWarehouseStore();
   const { t } = useLanguageStore();
@@ -69,6 +69,8 @@ export const DashboardModule: React.FC = () => {
     const diffDays = (new Date(c.nextCalibrationDate).getTime() - Date.now()) / (1000 * 3600 * 24);
     return diffDays >= 0 && diffDays <= 30;
   });
+
+  const activePmTasks = maintenanceTasks.filter(t => t.status === 'PENDING' || t.status === 'IN_PROGRESS');
 
   return (
     <div className="space-y-5">
@@ -128,14 +130,48 @@ export const DashboardModule: React.FC = () => {
       </div>
 
       {/* Alert Widgets */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        {/* Preventive Maintenance Widget */}
+        <div className="glass-panel p-5 space-y-3">
+          <div className="flex items-center justify-between pb-3 border-b border-surface-200">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="w-4 h-4 text-purple-600" />
+              <h3 className="font-bold text-sm text-slate-800">{t('Preventive Maintenance Due')}</h3>
+            </div>
+            <button onClick={() => setActiveModule('preventive-maintenance')} className="text-xs text-purple-600 hover:text-purple-700 flex items-center gap-1 font-medium">
+              {t('Schedule')} <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+          <div className="space-y-2">
+            {activePmTasks.length === 0 ? (
+              <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-lg text-center">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500 mx-auto mb-1" />
+                <p className="text-xs text-emerald-700">{t('All preventive schedules are up to date.')}</p>
+              </div>
+            ) : (
+              activePmTasks.slice(0, 3).map((pm) => (
+                <div key={pm.id} className="p-3 bg-purple-50 border border-purple-100 rounded-lg flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-semibold text-slate-800">{pm.assetName}</span>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{pm.title}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[11px] font-bold text-purple-700 block">{t('Due:')} {pm.dueDate}</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">{pm.priority}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
 
         {/* Service Orders */}
         <div className="glass-panel p-5 space-y-3">
           <div className="flex items-center justify-between pb-3 border-b border-surface-200">
             <div className="flex items-center gap-2">
               <Wrench className="w-4 h-4 text-amber-500" />
-              <h3 className="font-bold text-sm text-slate-800">{t('Active Service & Repair Orders')}</h3>
+              <h3 className="font-bold text-sm text-slate-800">{t('Active Service Orders')}</h3>
             </div>
             <button onClick={() => setActiveModule('maintenance')} className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1 font-medium">
               {t('View All')} <ArrowRight className="w-3 h-3" />
@@ -165,7 +201,7 @@ export const DashboardModule: React.FC = () => {
           <div className="flex items-center justify-between pb-3 border-b border-surface-200">
             <div className="flex items-center gap-2">
               <Gauge className="w-4 h-4 text-purple-500" />
-              <h3 className="font-bold text-sm text-slate-800">{t('Calibration Due (Next 30 Days)')}</h3>
+              <h3 className="font-bold text-sm text-slate-800">{t('Calibration Due (30 Days)')}</h3>
             </div>
             <button onClick={() => setActiveModule('calibration')} className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1 font-medium">
               {t('Manage')} <ArrowRight className="w-3 h-3" />
@@ -178,7 +214,7 @@ export const DashboardModule: React.FC = () => {
                 <p className="text-xs text-emerald-700">{t('All instruments are fully calibrated.')}</p>
               </div>
             ) : (
-              expiringCalibrations.map((cal) => (
+              expiringCalibrations.slice(0, 3).map((cal) => (
                 <div key={cal.id} className="p-3 bg-purple-50 border border-purple-100 rounded-lg flex items-center justify-between text-xs">
                   <div>
                     <span className="font-semibold text-slate-800">{cal.assetName}</span>

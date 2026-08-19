@@ -216,3 +216,86 @@ export interface AuditLog {
   newValues?: Record<string, any>;
   createdAt: string;
 }
+
+export type MaintenanceType =
+  | 'PREVENTIVE'
+  | 'INSPECTION'
+  | 'SERVICE'
+  | 'SAFETY_CHECK'
+  | 'CLEANING'
+  | 'LUBRICATION'
+  | 'OTHER';
+
+export type PlanPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type FrequencyUnit = 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS';
+export type PlanStatus = 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export type TaskResult = 'PASS' | 'PASS_WITH_NOTES' | 'FAILED' | 'NOT_COMPLETED';
+
+export interface ChecklistItem {
+  id: string;
+  title: string;
+  required: boolean;
+  completed?: boolean;
+  completedAt?: string;
+}
+
+export interface MaintenancePlan {
+  id: string;
+  assetId: string;
+  assetName?: string;
+  assetNumber?: string;
+  assetCategory?: string;
+  name: string;
+  description?: string;
+  type: MaintenanceType;
+  priority: PlanPriority;
+  frequency: number;
+  frequencyUnit: FrequencyUnit;
+  firstDueDate: string;
+  lastCompletedDate?: string;
+  nextDueDate: string;
+  responsibleId?: string;
+  responsibleName?: string;
+  estimatedDurationMinutes?: number;
+  estimatedCost?: number;
+  status: PlanStatus;
+  instructions?: string;
+  checklist?: ChecklistItem[];
+  requiredParts?: string;
+  createdById?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MaintenanceTask {
+  id: string;
+  taskNumber: string;
+  planId?: string;
+  planName?: string;
+  assetId: string;
+  assetName?: string;
+  assetNumber?: string;
+  assetSerialNumber?: string;
+  assetCategory?: string;
+  title: string;
+  type: MaintenanceType;
+  priority: PlanPriority;
+  dueDate: string;
+  assignedToId?: string;
+  assignedToName?: string;
+  status: TaskStatus;
+  startedAt?: string;
+  completedAt?: string;
+  actualDurationMinutes?: number;
+  laborCost?: number;
+  partsCost?: number;
+  totalCost?: number;
+  result?: TaskResult;
+  notes?: string;
+  checklistProgress?: ChecklistItem[];
+  overrideReason?: string;
+  createdById?: string;
+  createdAt: string;
+  updatedAt: string;
+}

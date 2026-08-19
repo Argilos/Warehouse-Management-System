@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import {
   Asset, Employee, Supplier, Project, ToolBox, ServiceOrder,
   CalibrationRecord, User, AppNotification, AuditLog, InventoryCheck,
-  AssetTransaction, UserRole, AssetStatus
+  AssetTransaction, UserRole, AssetStatus, MaintenancePlan, MaintenanceTask
 } from '../types';
 import { calculateCurrentAssetValue } from '../utils/depreciation';
 import { apiFetch } from '../lib/apiClient';
@@ -39,6 +39,8 @@ interface WarehouseStore {
   inventoryChecks: InventoryCheck[];
   notifications: AppNotification[];
   auditLogs: AuditLog[];
+  maintenancePlans: MaintenancePlan[];
+  maintenanceTasks: MaintenanceTask[];
 
   // Actions
   fetchInitialData: () => Promise<void>;
@@ -60,6 +62,14 @@ interface WarehouseStore {
   // Maintenance Actions
   createServiceOrder: (assetId: string, supplierId: string, problemDescription: string) => Promise<void>;
   completeServiceOrder: (serviceOrderId: string, repairCost: number, replacedParts: string) => Promise<void>;
+
+  // Preventive Maintenance Actions
+  addMaintenancePlan: (plan: Omit<MaintenancePlan, 'id' | 'createdAt' | 'updatedAt' | 'nextDueDate'>) => Promise<void>;
+  updateMaintenancePlan: (id: string, plan: Partial<MaintenancePlan>) => Promise<void>;
+  setPlanStatus: (id: string, status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED') => Promise<void>;
+  deleteMaintenancePlan: (id: string) => Promise<void>;
+  startMaintenanceTask: (taskId: string) => Promise<void>;
+  completeMaintenanceTask: (taskId: string, details: { actualDurationMinutes: number; laborCost: number; partsCost: number; result: string; notes?: string; checklistProgress?: any; overrideReason?: string }) => Promise<void>;
 
   // Calibration Actions
   addCalibrationRecord: (record: Omit<CalibrationRecord, 'id'>) => Promise<void>;
@@ -108,6 +118,8 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
   inventoryChecks: [],
   notifications: [],
   auditLogs: [],
+  maintenancePlans: [],
+  maintenanceTasks: [],
 
   fetchInitialData: async () => {
     try {
@@ -125,6 +137,8 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
         inventoryChecks: data.inventoryChecks || [],
         notifications: data.notifications || [],
         auditLogs: data.auditLogs || [],
+        maintenancePlans: data.maintenancePlans || [],
+        maintenanceTasks: data.maintenanceTasks || [],
         currentUser: data.users && data.users.length > 0 ? data.users[0] : STUB_USER,
       });
     } catch (error) {
@@ -282,6 +296,82 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
       await get().fetchInitialData();
     } catch (err) {
       console.error('Error completing service order:', err);
+    }
+  },
+
+  addMaintenancePlan: async (planData) => {
+    try {
+      await apiFetch('/maintenance-plans', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...planData,
+          createdById: get().currentUser.id,
+        }),
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error adding maintenance plan:', err);
+    }
+  },
+
+  updateMaintenancePlan: async (id, planData) => {
+    try {
+      await apiFetch(`/maintenance-plans/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(planData),
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error updating maintenance plan:', err);
+    }
+  },
+
+  setPlanStatus: async (id, status) => {
+    try {
+      await apiFetch(`/maintenance-plans/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status }),
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error updating plan status:', err);
+    }
+  },
+
+  deleteMaintenancePlan: async (id) => {
+    try {
+      await apiFetch(`/maintenance-plans/${id}`, {
+        method: 'DELETE',
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error deleting maintenance plan:', err);
+    }
+  },
+
+  startMaintenanceTask: async (taskId) => {
+    try {
+      await apiFetch(`/maintenance-tasks/${taskId}/start`, {
+        method: 'PUT',
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error starting maintenance task:', err);
+    }
+  },
+
+  completeMaintenanceTask: async (taskId, details) => {
+    try {
+      await apiFetch(`/maintenance-tasks/${taskId}/complete`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...details,
+          completedById: get().currentUser.id,
+        }),
+      });
+      await get().fetchInitialData();
+    } catch (err) {
+      console.error('Error completing maintenance task:', err);
     }
   },
 

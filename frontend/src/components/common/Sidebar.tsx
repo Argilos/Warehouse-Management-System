@@ -3,7 +3,7 @@ import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { useLanguageStore } from '../../store/useLanguageStore';
 import {
   LayoutDashboard, PackageCheck, QrCode, ArrowLeftRight, Package,
-  Wrench, Gauge, Users, Building2, Briefcase, ClipboardCheck,
+  Wrench, CalendarClock, Gauge, Users, Building2, Briefcase, ClipboardCheck,
   BarChart3, ShieldCheck, Settings, History
 } from 'lucide-react';
 
@@ -17,7 +17,8 @@ export const Sidebar: React.FC = () => {
     { id: 'qr-scan', label: 'QR Mobile Access', icon: <QrCode className="w-4 h-4" />, category: 'Operations' },
     { id: 'issuing', label: 'Issue & Return Tools', icon: <ArrowLeftRight className="w-4 h-4" />, category: 'Operations' },
     { id: 'toolboxes', label: 'Tool Boxes (Kits)', icon: <Package className="w-4 h-4" />, category: 'Operations' },
-    { id: 'maintenance', label: 'Maintenance & Repairs', icon: <Wrench className="w-4 h-4" />, category: 'Services' },
+    { id: 'maintenance', label: 'Reactive Maintenance', icon: <Wrench className="w-4 h-4" />, category: 'Services' },
+    { id: 'preventive-maintenance', label: 'Preventive Maintenance', icon: <CalendarClock className="w-4 h-4" />, category: 'Services' },
     { id: 'calibration', label: 'Calibration Tracking', icon: <Gauge className="w-4 h-4" />, category: 'Services' },
     { id: 'employees', label: 'Employee Directory', icon: <Users className="w-4 h-4" />, category: 'People & Vendors' },
     { id: 'suppliers', label: 'Supplier Vendors', icon: <Building2 className="w-4 h-4" />, category: 'People & Vendors' },

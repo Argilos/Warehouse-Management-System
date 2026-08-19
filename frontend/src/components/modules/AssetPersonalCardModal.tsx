@@ -5,7 +5,7 @@ import { Modal } from '../common/Modal';
 import { formatCurrency } from '../../utils/depreciation';
 import { useLanguageStore } from '../../store/useLanguageStore';
 import {
-  Package, QrCode, Clock, Wrench, Gauge, FileText,
+  Package, QrCode, Clock, Wrench, CalendarClock, Gauge, FileText,
   MapPin, Tag, ShieldCheck
 } from 'lucide-react';
 
@@ -16,12 +16,12 @@ interface Props {
 
 export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
   const {
-    transactions, serviceOrders, calibrations,
+    transactions, serviceOrders, calibrations, maintenancePlans, maintenanceTasks,
     setSelectedAssetForQRLabel
   } = useWarehouseStore();
   const { t } = useLanguageStore();
 
-  const [activeTab, setActiveTab] = useState<'info' | 'history' | 'maintenance' | 'calibration' | 'docs'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'history' | 'pm' | 'maintenance' | 'calibration' | 'docs'>('info');
   const [selectedCalRecord, setSelectedCalRecord] = useState<CalibrationRecord | null>(null);
 
   if (!asset) return null;
@@ -29,6 +29,8 @@ export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
   const assetTransactions = transactions.filter(t => t.assetId === asset.id);
   const assetServiceOrders = serviceOrders.filter(s => s.assetId === asset.id);
   const assetCalibrations = calibrations.filter(c => c.assetId === asset.id);
+  const assetPlans = maintenancePlans.filter(p => p.assetId === asset.id);
+  const assetPmTasks = maintenanceTasks.filter(m => m.assetId === asset.id);
 
   return (
     <>
@@ -75,6 +77,7 @@ export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
             {[
               { id: 'info', label: t('Basic Info & Financials'), icon: <Tag className="w-3.5 h-3.5" /> },
               { id: 'history', label: `${t('Custody History')} (${assetTransactions.length})`, icon: <Clock className="w-3.5 h-3.5" /> },
+              { id: 'pm', label: `${t('PM Plans & Tasks')} (${assetPmTasks.length})`, icon: <CalendarClock className="w-3.5 h-3.5" /> },
               { id: 'maintenance', label: `${t('Repairs')} (${assetServiceOrders.length})`, icon: <Wrench className="w-3.5 h-3.5" /> },
               { id: 'calibration', label: `${t('Calibrations')} (${assetCalibrations.length})`, icon: <Gauge className="w-3.5 h-3.5" /> },
               { id: 'docs', label: t('Manuals & Specs'), icon: <FileText className="w-3.5 h-3.5" /> },
@@ -181,7 +184,64 @@ export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
             </div>
           )}
 
-          {/* Tab 3: Maintenance */}
+          {/* Tab 3: Preventive Maintenance Plans & Tasks */}
+          {activeTab === 'pm' && (
+            <div className="space-y-4 text-xs">
+              <div>
+                <h4 className="font-bold text-slate-700 text-xs mb-2 uppercase tracking-wider">{t('Recurring Maintenance Plans')} ({assetPlans.length})</h4>
+                {assetPlans.length === 0 ? (
+                  <p className="text-slate-400 p-3 bg-surface-50 rounded border border-surface-200 text-center">{t('No active preventive plans assigned to this equipment.')}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {assetPlans.map((plan) => (
+                      <div key={plan.id} className="p-3 bg-purple-50/50 border border-purple-100 rounded-lg flex items-center justify-between">
+                        <div>
+                          <span className="font-bold text-slate-800">{plan.name}</span>
+                          <span className="text-[10px] text-slate-500 block">{t('Every')} {plan.frequency} {t(plan.frequencyUnit)} • {plan.type}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-purple-700 block">{t('Next Due:')} {plan.nextDueDate}</span>
+                          <span className="text-[10px] text-slate-400">{plan.responsibleName || t('Unassigned')}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 className="font-bold text-slate-700 text-xs mb-2 uppercase tracking-wider">{t('Maintenance Task Log')} ({assetPmTasks.length})</h4>
+                {assetPmTasks.length === 0 ? (
+                  <p className="text-slate-400 p-3 bg-surface-50 rounded border border-surface-200 text-center">{t('No maintenance execution records logged.')}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {assetPmTasks.map((mt) => (
+                      <div key={mt.id} className="p-3 bg-surface-50 border border-surface-200 rounded-lg flex items-center justify-between">
+                        <div>
+                          <span className="font-mono font-bold text-purple-700">{mt.taskNumber}</span>
+                          <span className="font-semibold text-slate-800 ml-2">{mt.title}</span>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{t('Due:')} {mt.dueDate} {mt.completedAt ? `• ${t('Completed:')} ${mt.completedAt.slice(0, 10)}` : ''}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className={`px-2 py-0.5 rounded font-bold text-[10px] uppercase border ${mt.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            mt.status === 'IN_PROGRESS' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                              'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}>
+                            {t(mt.status)}
+                          </span>
+                          {mt.totalCost !== undefined && mt.totalCost > 0 && (
+                            <span className="text-[10px] text-slate-500 block mt-0.5">€{mt.totalCost.toFixed(2)}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Tab 4: Service & Repairs */}
           {activeTab === 'maintenance' && (
             <div className="space-y-2 text-xs">
               {assetServiceOrders.length === 0 ? (
@@ -201,15 +261,15 @@ export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
             </div>
           )}
 
-          {/* Tab 4: Calibration */}
+          {/* Tab 5: Calibration */}
           {activeTab === 'calibration' && (
             <div className="space-y-2 text-xs">
               {assetCalibrations.length === 0 ? (
                 <p className="text-slate-400 p-6 text-center">{t('No calibration records on file for this asset.')}</p>
               ) : (
                 assetCalibrations.map((cal) => (
-                  <div 
-                    key={cal.id} 
+                  <div
+                    key={cal.id}
                     onClick={() => setSelectedCalRecord(cal)}
                     className="p-3.5 bg-surface-50 border border-surface-200 rounded-lg flex items-center justify-between cursor-pointer hover:border-brand-300 transition-colors"
                   >
@@ -229,7 +289,7 @@ export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
             </div>
           )}
 
-          {/* Tab 5: Documents */}
+          {/* Tab 6: Documents */}
           {activeTab === 'docs' && (
             <div className="p-6 bg-surface-50 border border-surface-200 rounded-xl text-center space-y-3">
               <FileText className="w-8 h-8 text-brand-600 mx-auto" />

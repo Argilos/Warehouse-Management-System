@@ -18,6 +18,7 @@ import { QRScannerModule } from './components/modules/QRScannerModule';
 import { ToolIssuingModule } from './components/modules/ToolIssuingModule';
 import { ToolBoxModule } from './components/modules/ToolBoxModule';
 import { MaintenanceModule } from './components/modules/MaintenanceModule';
+import { PreventiveMaintenanceModule } from './components/modules/PreventiveMaintenanceModule';
 import { CalibrationModule } from './components/modules/CalibrationModule';
 import { EmployeeModule } from './components/modules/EmployeeModule';
 import { SupplierModule } from './components/modules/SupplierModule';
@@ -53,6 +54,8 @@ export function App() {
         return <ToolBoxModule />;
       case 'maintenance':
         return <MaintenanceModule />;
+      case 'preventive-maintenance':
+        return <PreventiveMaintenanceModule />;
       case 'calibration':
         return <CalibrationModule />;
       case 'employees':

@@ -1,5 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -23,6 +28,8 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       inventoryChecksRaw,
       notificationsRaw,
       auditLogsRaw,
+      maintenancePlansRaw,
+      maintenanceTasksRaw,
     ] = await Promise.all([
       prisma.user.findMany(),
       prisma.employee.findMany({
@@ -73,6 +80,14 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       prisma.auditLog.findMany({
         include: { user: true },
         orderBy: { createdAt: 'desc' },
+      }),
+      prisma.maintenancePlan.findMany({
+        include: { asset: true, responsible: true, tasks: { orderBy: { createdAt: 'desc' } } },
+        orderBy: { nextDueDate: 'asc' },
+      }),
+      prisma.maintenanceTask.findMany({
+        include: { asset: true, plan: true, assignedTo: true },
+        orderBy: { dueDate: 'asc' },
       }),
     ]);
 
@@ -367,6 +382,74 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       createdAt: l.createdAt.toISOString(),
     }));
 
+    // ─── AUTOMATED PREVENTIVE MAINTENANCE SCANNER & DEDUPLICATION ─────────────
+    let tasksList = [...maintenanceTasksRaw];
+
+    for (const plan of maintenancePlansRaw as any[]) {
+      if (plan.status === 'ACTIVE' && plan.nextDueDate) {
+        const nextDate = new Date(plan.nextDueDate);
+        const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+
+        // Deduplication Check: Check if an active (PENDING or IN_PROGRESS) task already exists for this plan
+        const hasActiveTask = tasksList.some(
+          (t: any) => t.planId === plan.id && (t.status === 'PENDING' || t.status === 'IN_PROGRESS')
+        );
+
+        if (!hasActiveTask && diffDays <= 30) {
+          const randNum = Math.floor(100 + Math.random() * 900);
+          const taskNumber = `PM-${now.getFullYear()}-${randNum}`;
+          const newTask = await prisma.maintenanceTask.create({
+            data: {
+              taskNumber,
+              planId: plan.id,
+              assetId: plan.assetId,
+              title: plan.name,
+              type: plan.type,
+              priority: plan.priority,
+              dueDate: plan.nextDueDate,
+              assignedToId: plan.responsibleId || null,
+              checklistProgress: plan.checklist || undefined,
+              status: 'PENDING',
+            },
+            include: { asset: true, plan: true, assignedTo: true },
+          });
+          tasksList.unshift(newTask);
+        }
+      }
+    }
+
+    if (targetUser) {
+      for (const task of tasksList as any[]) {
+        if (task.status === 'PENDING' || task.status === 'IN_PROGRESS') {
+          const dueDate = new Date(task.dueDate);
+          const diffDays = (dueDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+          if (diffDays <= 30) {
+            const exists = notifications.some((n: any) => n.type === 'SERVICE' && n.message.includes(task.taskNumber));
+            if (!exists) {
+              let title = `Preventive Maintenance Alert: ${task.asset?.name || task.title}`;
+              let message = `Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is due on ${dueDate.toISOString().slice(0, 10)}.`;
+              if (diffDays < 0) {
+                const daysOverdue = Math.abs(Math.floor(diffDays));
+                message = `OVERDUE: Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is overdue by ${daysOverdue} days!`;
+              } else if (Math.floor(diffDays) === 0) {
+                message = `DUE TODAY: Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is due today.`;
+              }
+              const createdNotif = await prisma.notification.create({
+                data: {
+                  userId: targetUser.id,
+                  type: 'SERVICE',
+                  title,
+                  message,
+                  isRead: false,
+                },
+              });
+              notifications.unshift(createdNotif);
+            }
+          }
+        }
+      }
+    }
+
     const formattedUsers = users.map((u: any) => ({
       id: u.id,
       email: u.email,
@@ -376,6 +459,66 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       phone: u.phone || undefined,
       active: u.active,
       createdAt: u.createdAt.toISOString(),
+    }));
+
+    const formattedMaintenancePlans = maintenancePlansRaw.map((mp: any) => ({
+      id: mp.id,
+      assetId: mp.assetId,
+      assetName: mp.asset.name,
+      assetNumber: mp.asset.assetNumber,
+      assetCategory: mp.asset.category,
+      name: mp.name,
+      description: mp.description || undefined,
+      type: mp.type,
+      priority: mp.priority,
+      frequency: mp.frequency,
+      frequencyUnit: mp.frequencyUnit,
+      firstDueDate: mp.firstDueDate.toISOString().slice(0, 10),
+      lastCompletedDate: mp.lastCompletedDate?.toISOString().slice(0, 10) || undefined,
+      nextDueDate: mp.nextDueDate.toISOString().slice(0, 10),
+      responsibleId: mp.responsibleId || undefined,
+      responsibleName: mp.responsible ? `${mp.responsible.firstName} ${mp.responsible.lastName}` : undefined,
+      estimatedDurationMinutes: mp.estimatedDurationMinutes || 60,
+      estimatedCost: mp.estimatedCost || 0,
+      status: mp.status,
+      instructions: mp.instructions || undefined,
+      checklist: (mp.checklist as any) || undefined,
+      requiredParts: mp.requiredParts || undefined,
+      createdById: mp.createdById || undefined,
+      createdAt: mp.createdAt.toISOString(),
+      updatedAt: mp.updatedAt.toISOString(),
+    }));
+
+    const formattedMaintenanceTasks = tasksList.map((mt: any) => ({
+      id: mt.id,
+      taskNumber: mt.taskNumber,
+      planId: mt.planId || undefined,
+      planName: mt.plan?.name || undefined,
+      assetId: mt.assetId,
+      assetName: mt.asset?.name || 'Equipment',
+      assetNumber: mt.asset?.assetNumber || 'AST-000',
+      assetSerialNumber: mt.asset?.serialNumber || undefined,
+      assetCategory: mt.asset?.category || undefined,
+      title: mt.title,
+      type: mt.type,
+      priority: mt.priority,
+      dueDate: mt.dueDate.toISOString().slice(0, 10),
+      assignedToId: mt.assignedToId || undefined,
+      assignedToName: mt.assignedTo ? `${mt.assignedTo.firstName} ${mt.assignedTo.lastName}` : undefined,
+      status: mt.status,
+      startedAt: mt.startedAt?.toISOString() || undefined,
+      completedAt: mt.completedAt?.toISOString() || undefined,
+      actualDurationMinutes: mt.actualDurationMinutes || undefined,
+      laborCost: mt.laborCost || 0,
+      partsCost: mt.partsCost || 0,
+      totalCost: mt.totalCost || 0,
+      result: mt.result || undefined,
+      notes: mt.notes || undefined,
+      checklistProgress: (mt.checklistProgress as any) || undefined,
+      overrideReason: mt.overrideReason || undefined,
+      createdById: mt.createdById || undefined,
+      createdAt: mt.createdAt.toISOString(),
+      updatedAt: mt.updatedAt.toISOString(),
     }));
 
     res.json({
@@ -391,6 +534,8 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       inventoryChecks: formattedInventoryChecks,
       notifications,
       auditLogs: formattedAuditLogs,
+      maintenancePlans: formattedMaintenancePlans,
+      maintenanceTasks: formattedMaintenanceTasks,
     });
   } catch (error) {
     console.error('Error fetching initial data:', error);
@@ -1068,6 +1213,328 @@ router.post('/audit-logs', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error creating audit log:', error);
     res.status(500).json({ error: 'Failed to create audit log' });
+  }
+});
+
+// Helper to calculate date-based recurrence interval safely
+function addRecurrenceInterval(baseDate: Date, frequency: number, unit: string): Date {
+  const d = new Date(baseDate.getTime());
+  const freq = Number(frequency) || 1;
+  const u = (unit || 'MONTHS').toUpperCase();
+
+  switch (u) {
+    case 'DAYS':
+      d.setDate(d.getDate() + freq);
+      break;
+    case 'WEEKS':
+      d.setDate(d.getDate() + freq * 7);
+      break;
+    case 'MONTHS': {
+      const currentMonth = d.getMonth();
+      d.setMonth(currentMonth + freq);
+      if (d.getMonth() !== (currentMonth + freq) % 12) {
+        d.setDate(0); // Set to last day of previous month for month-end boundary edge cases
+      }
+      break;
+    }
+    case 'YEARS': {
+      d.setFullYear(d.getFullYear() + freq);
+      break;
+    }
+    default:
+      d.setMonth(d.getMonth() + freq);
+  }
+  return d;
+}
+
+// ─── PREVENTIVE MAINTENANCE PLANS ───────────────────────────────────────────
+router.get('/maintenance-plans', async (req: Request, res: Response) => {
+  try {
+    const plans = await prisma.maintenancePlan.findMany({
+      include: { asset: true, responsible: true, tasks: { orderBy: { createdAt: 'desc' } } },
+      orderBy: { nextDueDate: 'asc' },
+    });
+    res.json(plans);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch maintenance plans' });
+  }
+});
+
+router.post('/maintenance-plans', async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    const firstDueDate = parseDate(body.firstDueDate);
+
+    const newPlan = await prisma.maintenancePlan.create({
+      data: {
+        assetId: body.assetId,
+        name: body.name,
+        description: body.description || null,
+        type: body.type || 'PREVENTIVE',
+        priority: body.priority || 'MEDIUM',
+        frequency: Number(body.frequency) || 6,
+        frequencyUnit: body.frequencyUnit || 'MONTHS',
+        firstDueDate,
+        nextDueDate: firstDueDate,
+        responsibleId: body.responsibleId || null,
+        estimatedDurationMinutes: Number(body.estimatedDurationMinutes) || 60,
+        estimatedCost: Number(body.estimatedCost) || 0.0,
+        status: body.status || 'ACTIVE',
+        instructions: body.instructions || null,
+        checklist: body.checklist || undefined,
+        requiredParts: body.requiredParts || null,
+        createdById: body.createdById || null,
+      },
+      include: { asset: true, responsible: true },
+    });
+
+    const now = new Date();
+    const diffDays = (firstDueDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+    if (diffDays <= 30) {
+      const randNum = Math.floor(100 + Math.random() * 900);
+      await prisma.maintenanceTask.create({
+        data: {
+          taskNumber: `PM-${now.getFullYear()}-${randNum}`,
+          planId: newPlan.id,
+          assetId: newPlan.assetId,
+          title: newPlan.name,
+          type: newPlan.type,
+          priority: newPlan.priority,
+          dueDate: firstDueDate,
+          assignedToId: newPlan.responsibleId || null,
+          checklistProgress: newPlan.checklist || undefined,
+          status: 'PENDING',
+        },
+      });
+    }
+
+    res.status(201).json(newPlan);
+  } catch (error: any) {
+    console.error('Error creating maintenance plan:', error);
+    res.status(500).json({ error: error.message || 'Failed to create maintenance plan' });
+  }
+});
+
+router.put('/maintenance-plans/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const body = req.body;
+
+    const dataToUpdate: any = { ...body };
+    delete dataToUpdate.id;
+    delete dataToUpdate.assetName;
+    delete dataToUpdate.assetNumber;
+    delete dataToUpdate.assetCategory;
+    delete dataToUpdate.responsibleName;
+
+    if (body.firstDueDate) dataToUpdate.firstDueDate = parseDate(body.firstDueDate);
+    if (body.nextDueDate) dataToUpdate.nextDueDate = parseDate(body.nextDueDate);
+    if (body.frequency) dataToUpdate.frequency = Number(body.frequency);
+    if (body.estimatedDurationMinutes) dataToUpdate.estimatedDurationMinutes = Number(body.estimatedDurationMinutes);
+    if (body.estimatedCost) dataToUpdate.estimatedCost = Number(body.estimatedCost);
+
+    const updatedPlan = await prisma.maintenancePlan.update({
+      where: { id },
+      data: dataToUpdate,
+      include: { asset: true, responsible: true },
+    });
+
+    res.json(updatedPlan);
+  } catch (error: any) {
+    console.error('Error updating maintenance plan:', error);
+    res.status(500).json({ error: error.message || 'Failed to update maintenance plan' });
+  }
+});
+
+router.put('/maintenance-plans/:id/status', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const updatedPlan = await prisma.maintenancePlan.update({
+      where: { id },
+      data: { status },
+      include: { asset: true, responsible: true },
+    });
+
+    res.json(updatedPlan);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update plan status' });
+  }
+});
+
+router.delete('/maintenance-plans/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await prisma.maintenancePlan.delete({ where: { id } });
+    res.json({ success: true, message: 'Maintenance plan deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete maintenance plan' });
+  }
+});
+
+// ─── PREVENTIVE MAINTENANCE TASKS ───────────────────────────────────────────
+router.get('/maintenance-tasks', async (req: Request, res: Response) => {
+  try {
+    const tasks = await prisma.maintenanceTask.findMany({
+      include: { asset: true, plan: true, assignedTo: true },
+      orderBy: { dueDate: 'asc' },
+    });
+    res.json(tasks);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch maintenance tasks' });
+  }
+});
+
+router.post('/maintenance-tasks', async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    const now = new Date();
+    const randNum = Math.floor(100 + Math.random() * 900);
+    const taskNumber = body.taskNumber || `PM-${now.getFullYear()}-${randNum}`;
+
+    const newTask = await prisma.maintenanceTask.create({
+      data: {
+        taskNumber,
+        planId: body.planId || null,
+        assetId: body.assetId,
+        title: body.title,
+        type: body.type || 'PREVENTIVE',
+        priority: body.priority || 'MEDIUM',
+        dueDate: parseDate(body.dueDate),
+        assignedToId: body.assignedToId || null,
+        checklistProgress: body.checklistProgress || undefined,
+        status: body.status || 'PENDING',
+      },
+      include: { asset: true, plan: true, assignedTo: true },
+    });
+
+    res.status(201).json(newTask);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to create maintenance task' });
+  }
+});
+
+router.put('/maintenance-tasks/:id/start', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const task = await prisma.maintenanceTask.findUnique({ where: { id }, include: { asset: true } });
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    await prisma.asset.update({
+      where: { id: task.assetId },
+      data: { status: 'IN_SERVICE' },
+    });
+
+    const updatedTask = await prisma.maintenanceTask.update({
+      where: { id },
+      data: {
+        status: 'IN_PROGRESS',
+        startedAt: new Date(),
+      },
+      include: { asset: true, plan: true, assignedTo: true },
+    });
+
+    res.json(updatedTask);
+  } catch (error: any) {
+    console.error('Error starting maintenance task:', error);
+    res.status(500).json({ error: error.message || 'Failed to start maintenance task' });
+  }
+});
+
+router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      actualDurationMinutes,
+      laborCost,
+      partsCost,
+      result = 'PASS',
+      notes,
+      checklistProgress,
+      overrideReason,
+      completedById,
+    } = req.body;
+
+    const task = await prisma.maintenanceTask.findUnique({
+      where: { id },
+      include: { asset: true, plan: true },
+    });
+
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const totalCost = (Number(laborCost) || 0) + (Number(partsCost) || 0);
+    const now = new Date();
+
+    const updatedTask = await prisma.maintenanceTask.update({
+      where: { id },
+      data: {
+        status: 'COMPLETED',
+        completedAt: now,
+        actualDurationMinutes: Number(actualDurationMinutes) || 60,
+        laborCost: Number(laborCost) || 0,
+        partsCost: Number(partsCost) || 0,
+        totalCost,
+        result,
+        notes,
+        checklistProgress: checklistProgress || undefined,
+        overrideReason: overrideReason || null,
+      },
+      include: { asset: true, plan: true, assignedTo: true },
+    });
+
+    const nextAssetStatus = result === 'FAILED' ? 'DAMAGED' : 'AVAILABLE';
+    await prisma.asset.update({
+      where: { id: task.assetId },
+      data: { status: nextAssetStatus },
+    });
+
+    if (task.planId && task.plan) {
+      const nextDue = addRecurrenceInterval(now, task.plan.frequency, task.plan.frequencyUnit);
+      await prisma.maintenancePlan.update({
+        where: { id: task.planId },
+        data: {
+          lastCompletedDate: now,
+          nextDueDate: nextDue,
+        },
+      });
+    }
+
+    const user = completedById ? await prisma.user.findUnique({ where: { id: completedById } }) : await prisma.user.findFirst();
+    if (user) {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'SERVICE',
+          title: `Preventive Maintenance Completed: ${task.asset.name}`,
+          message: `Maintenance task [${task.taskNumber}] completed with result ${result}. Total Cost: €${totalCost.toFixed(2)}.`,
+          isRead: false,
+        },
+      });
+
+      if (overrideReason) {
+        await prisma.auditLog.create({
+          data: {
+            userId: user.id,
+            entity: 'MaintenanceTask',
+            entityId: task.id,
+            action: 'CHECKLIST_OVERRIDE_COMPLETED',
+            newValues: { result, totalCost, overrideReason },
+            oldValues: { status: task.status },
+          },
+        });
+      }
+    }
+
+    res.json(updatedTask);
+  } catch (error: any) {
+    console.error('Error completing maintenance task:', error);
+    res.status(500).json({ error: error.message || 'Failed to complete maintenance task' });
   }
 });
 

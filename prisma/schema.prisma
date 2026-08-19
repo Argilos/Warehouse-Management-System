@@ -108,6 +108,8 @@ model Asset {
   toolBoxItems     ToolBoxItem[]
   inventoryItems   InventoryCheckItem[]
   documents        Document[]
+  maintenancePlans MaintenancePlan[]
+  maintenanceTasks MaintenanceTask[]
 
   @@map("assets")
 }
@@ -130,6 +132,8 @@ model Employee {
   employeeAssets   EmployeeAsset[]
   toolBoxes        ToolBox[]
   transactions     AssetTransaction[]
+  maintenancePlans MaintenancePlan[]
+  maintenanceTasks MaintenanceTask[]
 
   @@map("employees")
 }
@@ -343,4 +347,65 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@map("audit_logs")
+}
+
+model MaintenancePlan {
+  id                       String            @id @default(uuid())
+  assetId                  String
+  asset                    Asset             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  name                     String
+  description              String?
+  type                     String            @default("PREVENTIVE")
+  priority                 String            @default("MEDIUM")
+  frequency                Int               @default(6)
+  frequencyUnit            String            @default("MONTHS")
+  firstDueDate             DateTime
+  lastCompletedDate        DateTime?
+  nextDueDate              DateTime
+  responsibleId           String?
+  responsible              Employee?         @relation(fields: [responsibleId], references: [id])
+  estimatedDurationMinutes Int?              @default(60)
+  estimatedCost            Float?            @default(0.0)
+  status                   String            @default("ACTIVE")
+  instructions             String?
+  checklist                Json?
+  requiredParts            String?
+  createdById              String?
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  tasks                    MaintenanceTask[]
+
+  @@map("maintenance_plans")
+}
+
+model MaintenanceTask {
+  id                    String           @id @default(uuid())
+  taskNumber            String           @unique
+  planId                String?
+  plan                  MaintenancePlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  assetId               String
+  asset                 Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  title                 String
+  type                  String           @default("PREVENTIVE")
+  priority              String           @default("MEDIUM")
+  dueDate               DateTime
+  assignedToId          String?
+  assignedTo            Employee?        @relation(fields: [assignedToId], references: [id])
+  status                String           @default("PENDING")
+  startedAt             DateTime?
+  completedAt           DateTime?
+  actualDurationMinutes Int?
+  laborCost             Float?           @default(0.0)
+  partsCost             Float?           @default(0.0)
+  totalCost             Float?           @default(0.0)
+  result                String?
+  notes                 String?
+  checklistProgress     Json?
+  overrideReason        String?
+  createdById           String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@map("maintenance_tasks")
 }
