@@ -1,3 +1,4 @@
+// Express Routes for Warehouse Asset and Employee Management
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
@@ -708,6 +709,16 @@ router.post('/transactions/return', async (req: Request, res: Response) => {
     let user = performedById ? await prisma.user.findUnique({ where: { id: performedById } }) : null;
     if (!user) {
       user = await prisma.user.findFirst();
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            email: 'admin@warehouse.com',
+            firstName: 'System',
+            lastName: 'Admin',
+            role: 'ADMIN',
+          },
+        });
+      }
     }
 
     const newStatus = condition === 'DAMAGED' ? 'DAMAGED' : 'AVAILABLE';
@@ -734,7 +745,7 @@ router.post('/transactions/return', async (req: Request, res: Response) => {
         employeeId: empId || null,
         transactionType: 'RETURN',
         transactionDate: new Date(),
-        performedById: user?.id || assetId,
+        performedById: user.id,
         notes: notes || `Condition on return: ${condition}`,
       },
       include: { asset: true, employee: true, performedBy: true },
@@ -1050,7 +1061,19 @@ router.post('/inventory-checks', async (req: Request, res: Response) => {
     const { title, performedById } = req.body;
 
     let user = performedById ? await prisma.user.findUnique({ where: { id: performedById } }) : null;
-    if (!user) user = await prisma.user.findFirst();
+    if (!user) {
+      user = await prisma.user.findFirst();
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            email: 'admin@warehouse.com',
+            firstName: 'System',
+            lastName: 'Admin',
+            role: 'ADMIN',
+          },
+        });
+      }
+    }
 
     const count = await prisma.asset.count();
 
@@ -1058,7 +1081,7 @@ router.post('/inventory-checks', async (req: Request, res: Response) => {
       data: {
         checkNumber: `AUD-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
         title,
-        performedById: user?.id || 'system',
+        performedById: user.id,
         checkDate: new Date(),
         status: 'IN_PROGRESS',
         totalAssets: count,
@@ -1088,6 +1111,7 @@ router.post('/inventory-checks/:id/verify', async (req: Request, res: Response) 
       await prisma.inventoryCheckItem.update({
         where: { id: existingItem.id },
         data: {
+          verified: true,
           condition: condition || 'GOOD',
           notes,
           scannedAt: new Date(),
