@@ -695,7 +695,7 @@ export const PreventiveMaintenanceModule: React.FC<PreventiveMaintenanceModulePr
           <div className="grid grid-cols-7 gap-1">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
               <div key={day} className="p-2 text-center text-xs font-bold text-slate-400 uppercase bg-surface-50 rounded-t">
-                {day}
+                {t(day)}
               </div>
             ))}
 
