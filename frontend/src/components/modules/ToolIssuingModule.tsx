@@ -33,7 +33,8 @@ export const ToolIssuingModule: React.FC = () => {
   const [isIssueBoxModalOpen, setIsIssueBoxModalOpen] = useState(false);
   const [selectedToolBoxId, setSelectedToolBoxId] = useState<string>('');
 
-  const availableAssets = assets.filter((a) => a.status === 'AVAILABLE');
+  const toolBoxAssetIds = new Set(toolBoxes.flatMap((b) => b.items.map((i) => i.id)));
+  const availableAssets = assets.filter((a) => a.status === 'AVAILABLE' && !toolBoxAssetIds.has(a.id));
   const issuedAssets = assets.filter((a) => a.status === 'ISSUED');
   const availableToolBoxes = toolBoxes.filter((b) => b.status === 'UNASSIGNED');
   const assignedToolBoxes = toolBoxes.filter((b) => b.status === 'ASSIGNED');

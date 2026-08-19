@@ -370,52 +370,78 @@ export const QRScannerModule: React.FC = () => {
                 </div>
               </div>
 
-              {/* Dynamic Action Buttons */}
-              <div>
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-                  {t('Available Field Actions')} ({activeRole.replace('_', ' ')})
-                </h4>
+              {/* Parent Tool Box Kit Lock Banner */}
+              {(() => {
+                const parentToolBox = toolBoxes.find(b => b.items.some(i => i.id === matchedAsset.id));
+                return (
+                  <>
+                    {parentToolBox && (
+                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-purple-900 text-xs flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Box className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                          <span>
+                            {t('This tool is currently assembled inside Tool Box Kit:')} <strong>{parentToolBox.name} ({parentToolBox.boxNumber})</strong>. {t('It cannot be issued separately until the toolbox is dismantled.')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {/* Dynamic Action Buttons */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                        {t('Available Field Actions')} ({activeRole.replace('_', ' ')})
+                      </h4>
 
-                  <button
-                    onClick={() => setSelectedAssetFor360(matchedAsset)}
-                    className="p-3 bg-surface-50 hover:bg-surface-100 border border-surface-200 text-slate-800 rounded-xl text-xs font-semibold flex items-center justify-between transition-all"
-                  >
-                    <span>{t('View 360° Profile')}</span>
-                    <ArrowRight className="w-4 h-4 text-brand-600" />
-                  </button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
 
-                  {matchedAsset.status === 'ISSUED' && (
-                    <button
-                      onClick={handleOpenReturnModal}
-                      className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center justify-between transition-all shadow-sm"
-                    >
-                      <span>{t('Return Tool to Warehouse')}</span>
-                      <CheckCircle2 className="w-4 h-4" />
-                    </button>
-                  )}
+                        <button
+                          onClick={() => setSelectedAssetFor360(matchedAsset)}
+                          className="p-3 bg-surface-50 hover:bg-surface-100 border border-surface-200 text-slate-800 rounded-xl text-xs font-semibold flex items-center justify-between transition-all"
+                        >
+                          <span>{t('View 360° Profile')}</span>
+                          <ArrowRight className="w-4 h-4 text-brand-600" />
+                        </button>
 
-                  {matchedAsset.status === 'AVAILABLE' && (
-                    <button
-                      onClick={handleOpenCheckoutModal}
-                      className="p-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold flex items-center justify-between transition-all shadow-sm"
-                    >
-                      <span>{t('Checkout / Issue Tool')}</span>
-                      <ArrowLeftRight className="w-4 h-4" />
-                    </button>
-                  )}
+                        {matchedAsset.status === 'ISSUED' && (
+                          <button
+                            onClick={handleOpenReturnModal}
+                            className="p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center justify-between transition-all shadow-sm"
+                          >
+                            <span>{t('Return Tool to Warehouse')}</span>
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                        )}
 
-                  <button
-                    onClick={() => handleReportDamage(matchedAsset)}
-                    className="p-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold flex items-center justify-between transition-all"
-                  >
-                    <span>{t('Report Damage / Repair')}</span>
-                    <Wrench className="w-4 h-4" />
-                  </button>
+                        {matchedAsset.status === 'AVAILABLE' && !parentToolBox && (
+                          <button
+                            onClick={handleOpenCheckoutModal}
+                            className="p-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold flex items-center justify-between transition-all shadow-sm"
+                          >
+                            <span>{t('Checkout / Issue Tool')}</span>
+                            <ArrowLeftRight className="w-4 h-4" />
+                          </button>
+                        )}
 
-                </div>
-              </div>
+                        {matchedAsset.status === 'AVAILABLE' && parentToolBox && (
+                          <div className="p-3 bg-slate-100 border border-slate-200 text-slate-500 rounded-xl text-xs font-semibold flex items-center justify-between opacity-80 cursor-not-allowed">
+                            <span>{t('Locked in Kit (Dismantle to Issue)')}</span>
+                            <Box className="w-4 h-4 text-slate-400" />
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => handleReportDamage(matchedAsset)}
+                          className="p-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold flex items-center justify-between transition-all"
+                        >
+                          <span>{t('Report Damage / Repair')}</span>
+                          <Wrench className="w-4 h-4" />
+                        </button>
+
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
             </div>
           ) : (

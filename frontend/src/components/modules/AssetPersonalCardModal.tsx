@@ -6,7 +6,7 @@ import { formatCurrency } from '../../utils/depreciation';
 import { useLanguageStore } from '../../store/useLanguageStore';
 import {
   Package, QrCode, Clock, Wrench, CalendarClock, Gauge, FileText,
-  MapPin, Tag, ShieldCheck
+  MapPin, Tag, ShieldCheck, Box
 } from 'lucide-react';
 
 interface Props {
@@ -16,7 +16,7 @@ interface Props {
 
 export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
   const {
-    transactions, serviceOrders, calibrations, maintenancePlans, maintenanceTasks,
+    transactions, serviceOrders, calibrations, maintenancePlans, maintenanceTasks, toolBoxes,
     setSelectedAssetForQRLabel
   } = useWarehouseStore();
   const { t } = useLanguageStore();
@@ -31,6 +31,7 @@ export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
   const assetCalibrations = calibrations.filter(c => c.assetId === asset.id);
   const assetPlans = maintenancePlans.filter(p => p.assetId === asset.id);
   const assetPmTasks = maintenanceTasks.filter(m => m.assetId === asset.id);
+  const parentToolBox = toolBoxes.find(b => b.items.some(i => i.id === asset.id));
 
   return (
     <>
@@ -44,7 +45,7 @@ export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
                 <Package className="w-6 h-6" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded border border-brand-100">
                     {asset.assetNumber}
                   </span>
@@ -54,6 +55,12 @@ export const AssetPersonalCardModal: React.FC<Props> = ({ asset, onClose }) => {
                   }`}>
                     {t(asset.status)}
                   </span>
+                  {parentToolBox && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                      <Box className="w-3 h-3 text-purple-600" />
+                      <span>{t('In Kit:')} {parentToolBox.name} ({parentToolBox.boxNumber})</span>
+                    </span>
+                  )}
                 </div>
                 <h3 className="font-bold text-base text-slate-800 mt-1">{asset.name}</h3>
                 <p className="text-xs text-slate-400">{asset.manufacturer} • {asset.model} • {t('SN:')} {asset.serialNumber}</p>
