@@ -20,6 +20,7 @@ const STATUS_STYLES: Record<string, string> = {
   RETIRED: 'bg-slate-100 text-slate-500 border-slate-200',
   DAMAGED: 'bg-red-50 text-red-700 border-red-200',
   LOST: 'bg-rose-50 text-rose-700 border-rose-200',
+  MISSING: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
 export const DashboardModule: React.FC = () => {
@@ -29,15 +30,20 @@ export const DashboardModule: React.FC = () => {
   } = useWarehouseStore();
   const { t } = useLanguageStore();
 
-  const totalAssetsCount = assets.length;
+  // Deduct missing/lost tools from Total Fleet Assets count & valuation
+  const activeFleetAssets = assets.filter(a => a.status !== 'MISSING' && a.status !== 'LOST');
+  const totalAssetsCount = activeFleetAssets.length;
+  const missingCount = assets.filter(a => a.status === 'MISSING' || a.status === 'LOST').length;
+
   const availableCount = assets.filter(a => a.status === 'AVAILABLE').length;
   const issuedCount = assets.filter(a => a.status === 'ISSUED').length;
   const serviceCount = assets.filter(a => a.status === 'IN_SERVICE').length;
   const calibrationCount = assets.filter(a => a.status === 'IN_CALIBRATION').length;
   const retiredCount = assets.filter(a => a.status === 'RETIRED').length;
+  const damagedCount = assets.filter(a => a.status === 'DAMAGED').length;
 
-  const totalOriginalValue = assets.reduce((sum, a) => sum + a.purchasePrice, 0);
-  const totalCurrentValue = assets.reduce((sum, a) => sum + a.currentValue, 0);
+  const totalOriginalValue = activeFleetAssets.reduce((sum, a) => sum + a.purchasePrice, 0);
+  const totalCurrentValue = activeFleetAssets.reduce((sum, a) => sum + a.currentValue, 0);
 
   const statusPieData = [
     { name: t('AVAILABLE'), value: availableCount, color: '#10b981' },
@@ -45,6 +51,8 @@ export const DashboardModule: React.FC = () => {
     { name: t('IN SERVICE'), value: serviceCount, color: '#f59e0b' },
     { name: t('IN CALIBRATION'), value: calibrationCount, color: '#8b5cf6' },
     { name: t('RETIRED'), value: retiredCount, color: '#94a3b8' },
+    { name: t('DAMAGED'), value: damagedCount, color: '#ef4444' },
+    { name: t('MISSING'), value: missingCount, color: '#f43f5e' },
   ].filter(d => d.value > 0);
 
   const categoriesMap: Record<string, number> = {};
@@ -102,7 +110,11 @@ export const DashboardModule: React.FC = () => {
         <StatCard
           title={t('Total Fleet Assets')}
           value={totalAssetsCount}
-          subtitle={`${t('Acquisition:')} ${formatCurrency(totalOriginalValue)}`}
+          subtitle={
+            missingCount > 0
+              ? `${t('Acquisition:')} ${formatCurrency(totalOriginalValue)} (${missingCount} ${t('missing deducted')})`
+              : `${t('Acquisition:')} ${formatCurrency(totalOriginalValue)}`
+          }
           icon={<PackageCheck className="w-5 h-5" />}
           accentColor="from-blue-600 to-indigo-600"
         />

@@ -9,7 +9,8 @@ export type AssetStatus =
   | 'IN_CALIBRATION' 
   | 'RETIRED' 
   | 'DAMAGED' 
-  | 'LOST';
+  | 'LOST'
+  | 'MISSING';
 
 export type EmployeeStatus = 'ACTIVE' | 'INACTIVE' | 'TERMINATED';
 

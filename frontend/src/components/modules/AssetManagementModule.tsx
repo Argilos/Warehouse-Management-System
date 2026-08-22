@@ -17,6 +17,7 @@ const STATUS_STYLES: Record<string, string> = {
   RETIRED: 'bg-slate-100 text-slate-500 border-slate-200',
   DAMAGED: 'bg-red-50 text-red-700 border-red-200',
   LOST: 'bg-rose-50 text-rose-700 border-rose-200',
+  MISSING: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
 export const AssetManagementModule: React.FC = () => {
@@ -170,6 +171,8 @@ export const AssetManagementModule: React.FC = () => {
               <option value="IN_CALIBRATION">{t('IN CALIBRATION')}</option>
               <option value="RETIRED">{t('RETIRED')}</option>
               <option value="DAMAGED">{t('DAMAGED')}</option>
+              <option value="LOST">{t('LOST')}</option>
+              <option value="MISSING">{t('MISSING')}</option>
             </select>
           </div>
         </div>

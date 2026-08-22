@@ -517,6 +517,10 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
         method: 'POST',
         body: JSON.stringify({ assetId, condition, notes }),
       });
+      const newStatus: AssetStatus = condition === 'MISSING' ? 'MISSING' : condition === 'DAMAGED' ? 'DAMAGED' : 'AVAILABLE';
+      set((state) => ({
+        assets: state.assets.map((ast) => (ast.id === assetId ? { ...ast, status: newStatus } : ast)),
+      }));
     } catch (err) {
       console.error('Error verifying inventory item:', err);
     }
