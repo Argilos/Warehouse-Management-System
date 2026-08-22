@@ -31,6 +31,7 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       auditLogsRaw,
       maintenancePlansRaw,
       maintenanceTasksRaw,
+      otpremnicaDocsRaw,
     ] = await Promise.all([
       prisma.user.findMany(),
       prisma.employee.findMany({
@@ -89,6 +90,10 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       prisma.maintenanceTask.findMany({
         include: { asset: true, plan: true, assignedTo: true },
         orderBy: { dueDate: 'asc' },
+      }),
+      prisma.otpremnicaDocument.findMany({
+        include: { employee: true, project: true, createdBy: true },
+        orderBy: { createdAt: 'desc' },
       }),
     ]);
 
@@ -523,6 +528,24 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       updatedAt: mt.updatedAt.toISOString(),
     }));
 
+    const formattedOtpremnicaDocs = (otpremnicaDocsRaw || []).map((doc: any) => ({
+      id: doc.id,
+      documentNumber: doc.documentNumber,
+      employeeId: doc.employeeId,
+      employeeName: doc.employee ? `${doc.employee.firstName} ${doc.employee.lastName}` : undefined,
+      employeeNumber: doc.employee?.employeeNumber || undefined,
+      employeeDepartment: doc.employee?.department || undefined,
+      projectId: doc.projectId || undefined,
+      projectName: doc.project?.name || undefined,
+      projectCode: doc.project?.projectCode || undefined,
+      createdById: doc.createdById,
+      createdByName: doc.createdBy ? `${doc.createdBy.firstName} ${doc.createdBy.lastName}` : undefined,
+      issueDate: doc.issueDate.toISOString().slice(0, 10),
+      notes: doc.notes || undefined,
+      transactionIds: doc.transactionIds || [],
+      createdAt: doc.createdAt.toISOString(),
+    }));
+
     res.json({
       users: formattedUsers,
       employees: formattedEmployees,
@@ -538,6 +561,7 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       auditLogs: formattedAuditLogs,
       maintenancePlans: formattedMaintenancePlans,
       maintenanceTasks: formattedMaintenanceTasks,
+      otpremnicaDocuments: formattedOtpremnicaDocs,
     });
   } catch (error) {
     console.error('Error fetching initial data:', error);
@@ -1688,6 +1712,142 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
   } catch (error: any) {
     console.error('Error completing maintenance task:', error);
     res.status(500).json({ error: error.message || 'Failed to complete maintenance task' });
+  }
+});
+
+// ─── OTPREMNICA / EQUIPMENT HANDOVER DOCUMENTS ─────────────────────────────
+router.get('/otpremnica', async (req: Request, res: Response) => {
+  try {
+    const docs = await prisma.otpremnicaDocument.findMany({
+      include: { employee: true, project: true, createdBy: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(docs);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch otpremnica documents' });
+  }
+});
+
+router.post('/otpremnica/generate', async (req: Request, res: Response) => {
+  try {
+    const { employeeId, projectId, transactionIds, notes, createdById } = req.body;
+
+    let user = createdById ? await prisma.user.findUnique({ where: { id: createdById } }) : await prisma.user.findFirst();
+    if (!user) {
+      user = await prisma.user.create({
+        data: { email: 'admin@warehouse.com', firstName: 'System', lastName: 'Admin', role: 'ADMIN' },
+      });
+    }
+
+    const currentYear = new Date().getFullYear();
+    const count = await prisma.otpremnicaDocument.count();
+    const seqNum = String(count + 1).padStart(4, '0');
+    const documentNumber = `OTP-${currentYear}-${seqNum}`;
+
+    const doc = await prisma.otpremnicaDocument.create({
+      data: {
+        documentNumber,
+        employeeId,
+        projectId: projectId || null,
+        createdById: user.id,
+        issueDate: new Date(),
+        notes: notes || null,
+        transactionIds: transactionIds || [],
+      },
+      include: { employee: true, project: true, createdBy: true },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        entity: 'OtpremnicaDocument',
+        entityId: doc.id,
+        action: 'OTPREMNICA_GENERATED',
+        newValues: { documentNumber, employeeId, projectId, transactionCount: (transactionIds || []).length },
+      },
+    });
+
+    res.status(201).json(doc);
+  } catch (error: any) {
+    console.error('Error generating Otpremnica:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate Otpremnica document' });
+  }
+});
+
+// ─── TOOLBOX INVENTORY AUDIT WORKFLOW ──────────────────────────────────────
+router.post('/inventory-checks/toolbox/start', async (req: Request, res: Response) => {
+  try {
+    const { toolBoxId, title, performedById, notes } = req.body;
+
+    const toolBox = await prisma.toolBox.findUnique({
+      where: { id: toolBoxId },
+      include: { items: { include: { asset: true } } },
+    });
+
+    if (!toolBox) {
+      return res.status(404).json({ error: 'Toolbox not found' });
+    }
+
+    let user = performedById ? await prisma.user.findUnique({ where: { id: performedById } }) : await prisma.user.findFirst();
+    if (!user) {
+      user = await prisma.user.create({
+        data: { email: 'admin@warehouse.com', firstName: 'System', lastName: 'Admin', role: 'ADMIN' },
+      });
+    }
+
+    const currentYear = new Date().getFullYear();
+    const count = await prisma.inventoryCheck.count();
+    const seqNum = String(count + 1).padStart(3, '0');
+    const checkNumber = `INV-KIT-${currentYear}-${seqNum}`;
+
+    const inventoryCheck = await prisma.inventoryCheck.create({
+      data: {
+        checkNumber,
+        title: title || `Toolbox Audit: ${toolBox.name} (${toolBox.boxNumber})`,
+        performedById: user.id,
+        toolBoxId: toolBox.id,
+        status: 'IN_PROGRESS',
+        totalAssets: toolBox.items.length,
+        notes: notes || null,
+        items: {
+          create: toolBox.items.map((item) => ({
+            assetId: item.assetId,
+            verified: false,
+            condition: 'GOOD',
+          })),
+        },
+      },
+      include: { performedBy: true, toolBox: true, items: { include: { asset: true } } },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        entity: 'InventoryCheck',
+        entityId: inventoryCheck.id,
+        action: 'TOOLBOX_INVENTORY_STARTED',
+        newValues: { checkNumber, toolBoxId: toolBox.id, toolBoxName: toolBox.name, itemCount: toolBox.items.length },
+      },
+    });
+
+    res.status(201).json(inventoryCheck);
+  } catch (error: any) {
+    console.error('Error starting toolbox inventory:', error);
+    res.status(500).json({ error: error.message || 'Failed to start toolbox inventory' });
+  }
+});
+
+router.get('/toolboxes/:id/inventory-history', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const checks = await prisma.inventoryCheck.findMany({
+      where: { toolBoxId: id },
+      include: { performedBy: true, items: { include: { asset: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(checks);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch toolbox inventory history' });
   }
 });
 

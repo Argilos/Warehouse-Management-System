@@ -7,12 +7,18 @@ import {
 } from 'lucide-react';
 import { ToolBox } from '../../types';
 
+import { OtpremnicaModal } from './OtpremnicaModal';
+import { OtpremnicaDocument } from '../../types';
+
 export const ToolIssuingModule: React.FC = () => {
   const {
     assets, employees, projects, toolBoxes, transactions, issueAssets, returnAsset,
-    issueToolBox, returnToolBox, dismantleToolBox, activeRole
+    issueToolBox, returnToolBox, dismantleToolBox, generateOtpremnica, activeRole
   } = useWarehouseStore();
   const { t } = useLanguageStore();
+
+  const [otpremnicaModalOpen, setOtpremnicaModalOpen] = useState(false);
+  const [currentOtpremnica, setCurrentOtpremnica] = useState<OtpremnicaDocument | null>(null);
 
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
@@ -45,17 +51,28 @@ export const ToolIssuingModule: React.FC = () => {
     );
   };
 
-  const handleConfirmIssue = (e: React.FormEvent) => {
+  const handleConfirmIssue = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeId || selectedAssetIds.length === 0) {
       alert(t('Please select an employee and at least one equipment item to issue.'));
       return;
     }
 
-    issueAssets(selectedAssetIds, selectedEmployeeId, selectedProjectId || undefined, expectedReturnDate, checkoutNotes);
+    const empId = selectedEmployeeId;
+    const projId = selectedProjectId;
+    const notes = checkoutNotes;
+
+    await issueAssets(selectedAssetIds, empId, projId || undefined, expectedReturnDate, notes);
     setIsIssueModalOpen(false);
     setSelectedAssetIds([]);
     setCheckoutNotes('');
+
+    // Generate Otpremnica Handover Document
+    const doc = await generateOtpremnica(empId, projId || undefined, undefined, notes);
+    if (doc) {
+      setCurrentOtpremnica(doc);
+      setOtpremnicaModalOpen(true);
+    }
   };
 
   const handleConfirmReturn = (e: React.FormEvent) => {
@@ -440,6 +457,13 @@ export const ToolIssuingModule: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Otpremnica Handover Receipt Modal */}
+      <OtpremnicaModal
+        isOpen={otpremnicaModalOpen}
+        onClose={() => setOtpremnicaModalOpen(false)}
+        otpremnica={currentOtpremnica}
+      />
 
     </div>
   );

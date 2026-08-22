@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
 import { useLanguageStore } from '../../store/useLanguageStore';
-import { Package, Plus, User, QrCode, ArrowLeftRight, CheckCircle2, Trash2 } from 'lucide-react';
+import { Package, Plus, User, QrCode, ArrowLeftRight, CheckCircle2, Trash2, ClipboardList, Printer } from 'lucide-react';
 import { ToolBox } from '../../types';
+import { ToolboxInventoryModal } from './ToolboxInventoryModal';
+import { exportToolboxInventorySheetPDF } from '../../utils/pdfReportGenerator';
 
 export const ToolBoxModule: React.FC = () => {
   const {
@@ -22,6 +24,19 @@ export const ToolBoxModule: React.FC = () => {
   const [targetToolBox, setTargetToolBox] = useState<ToolBox | null>(null);
   const [issueEmployeeId, setIssueEmployeeId] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
+
+  // Inventory Audit Modal state
+  const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
+  const [inventoryToolBox, setInventoryToolBox] = useState<ToolBox | null>(null);
+
+  const handleOpenInventory = (box: ToolBox) => {
+    setInventoryToolBox(box);
+    setInventoryModalOpen(true);
+  };
+
+  const handlePrintBlankSheet = (box: ToolBox) => {
+    exportToolboxInventorySheetPDF(box, box.items);
+  };
 
   const handleOpenCreateModal = () => {
     const randId = Math.floor(10 + Math.random() * 90);
@@ -148,6 +163,26 @@ export const ToolBoxModule: React.FC = () => {
                 </div>
 
                 <div className="space-y-2 pt-3 border-t border-surface-100">
+                  {/* Inventory Sheet & Audit Buttons */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleOpenInventory(tb)}
+                      className="flex-1 px-2.5 py-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 rounded font-semibold text-xs flex items-center justify-center gap-1 transition-all"
+                      title={t('Start Stock Inventory Audit for this Toolbox')}
+                    >
+                      <ClipboardList className="w-3.5 h-3.5 text-brand-600" />
+                      <span>{t('Inventory Audit')}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handlePrintBlankSheet(tb)}
+                      className="p-1.5 bg-surface-100 hover:bg-surface-200 text-slate-600 rounded border border-surface-200"
+                      title={t('Print Blank Inventory Sheet PDF')}
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
                   {/* Action Buttons */}
                   <div className="flex items-center gap-2">
                     {tb.status === 'ASSIGNED' && (
@@ -293,6 +328,13 @@ export const ToolBoxModule: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Toolbox Inventory Audit Modal */}
+      <ToolboxInventoryModal
+        isOpen={inventoryModalOpen}
+        onClose={() => setInventoryModalOpen(false)}
+        toolBox={inventoryToolBox}
+      />
 
     </div>
   );

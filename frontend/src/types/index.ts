@@ -301,3 +301,75 @@ export interface MaintenanceTask {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface OtpremnicaDocument {
+  id: string;
+  documentNumber: string;
+  employeeId: string;
+  employeeName?: string;
+  employeeNumber?: string;
+  employeeDepartment?: string;
+  projectId?: string;
+  projectName?: string;
+  projectCode?: string;
+  createdById: string;
+  createdByName?: string;
+  issueDate: string;
+  notes?: string;
+  transactionIds: string[];
+  items?: {
+    assetId: string;
+    assetNumber: string;
+    assetName: string;
+    serialNumber: string;
+    category: string;
+    quantity: number;
+    notes?: string;
+  }[];
+  createdAt: string;
+}
+
+export type ReportCategoryPreset = 
+  | 'ALL_ASSETS'
+  | 'ASSETS_BY_EMPLOYEE'
+  | 'ASSETS_BY_PROJECT'
+  | 'ASSETS_BY_CATEGORY'
+  | 'ASSETS_BY_STATUS'
+  | 'ASSETS_BY_SUPPLIER'
+  | 'ASSETS_BY_MANUFACTURER'
+  | 'ASSETS_BY_LOCATION'
+  | 'ISSUED_ASSETS'
+  | 'RETURNED_ASSETS'
+  | 'OVERDUE_ASSETS'
+  | 'MAINTENANCE_LOGS'
+  | 'CALIBRATION_RECORDS'
+  | 'DAMAGED_ASSETS'
+  | 'MISSING_ASSETS'
+  | 'TOOLBOX_CONTENTS'
+  | 'ASSET_MOVEMENT_HISTORY'
+  | 'FINANCIAL_DEPRECIATION'
+  | 'OTPREMNICA_ARCHIVE';
+
+export interface ReportFilterCriteria {
+  preset: ReportCategoryPreset;
+  searchQuery?: string;
+  assetId?: string;
+  serialNumber?: string;
+  qrCode?: string;
+  category?: string;
+  manufacturer?: string;
+  model?: string;
+  status?: string;
+  supplierId?: string;
+  location?: string;
+  employeeId?: string;
+  department?: string;
+  position?: string;
+  projectId?: string;
+  transactionType?: string;
+  serviceStatus?: string;
+  calibrationResult?: string;
+  dateRangePreset?: 'ALL' | 'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR' | 'CUSTOM';
+  startDate?: string;
+  endDate?: string;
+}

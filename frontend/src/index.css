@@ -104,15 +104,30 @@
   body * {
     visibility: hidden;
   }
-  #printable-qr-container, #printable-qr-container * {
+  #printable-qr-container, #printable-qr-container *,
+  #printable-document, #printable-document *,
+  .printable-area, .printable-area * {
     visibility: visible;
   }
-  #printable-qr-container {
+  #printable-qr-container,
+  #printable-document,
+  .printable-area {
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
     background: white !important;
     color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
   }
 }

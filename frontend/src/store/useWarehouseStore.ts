@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import {
   Asset, Employee, Supplier, Project, ToolBox, ServiceOrder,
   CalibrationRecord, User, AppNotification, AuditLog, InventoryCheck,
-  AssetTransaction, UserRole, AssetStatus, MaintenancePlan, MaintenanceTask
+  AssetTransaction, UserRole, AssetStatus, MaintenancePlan, MaintenanceTask,
+  OtpremnicaDocument
 } from '../types';
 import { calculateCurrentAssetValue } from '../utils/depreciation';
 import { apiFetch } from '../lib/apiClient';
@@ -41,6 +42,7 @@ interface WarehouseStore {
   auditLogs: AuditLog[];
   maintenancePlans: MaintenancePlan[];
   maintenanceTasks: MaintenanceTask[];
+  otpremnicaDocuments: OtpremnicaDocument[];
 
   // Actions
   fetchInitialData: () => Promise<void>;
@@ -58,6 +60,7 @@ interface WarehouseStore {
   // Issuing & Return Actions
   issueAssets: (assetIds: string[], employeeId: string, projectId?: string, expectedReturnDate?: string, notes?: string) => Promise<void>;
   returnAsset: (assetId: string, condition: string, notes?: string) => Promise<void>;
+  generateOtpremnica: (employeeId: string, projectId?: string, transactionIds?: string[], notes?: string) => Promise<OtpremnicaDocument | null>;
 
   // Maintenance Actions
   createServiceOrder: (assetId: string, supplierId: string, problemDescription: string) => Promise<void>;
@@ -84,6 +87,8 @@ interface WarehouseStore {
   issueToolBox: (boxId: string, employeeId: string, projectId?: string, expectedReturnDate?: string, notes?: string) => Promise<void>;
   returnToolBox: (boxId: string, condition?: string, notes?: string) => Promise<void>;
   dismantleToolBox: (boxId: string) => Promise<void>;
+  startToolboxInventory: (toolBoxId: string, title?: string, notes?: string) => Promise<any>;
+  fetchToolboxInventoryHistory: (toolBoxId: string) => Promise<any[]>;
 
   // Supplier Actions
   addSupplier: (supplier: Omit<Supplier, 'id'>) => Promise<void>;
@@ -123,6 +128,7 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
   auditLogs: [],
   maintenancePlans: [],
   maintenanceTasks: [],
+  otpremnicaDocuments: [],
 
   fetchInitialData: async () => {
     try {
@@ -142,6 +148,7 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
         auditLogs: data.auditLogs || [],
         maintenancePlans: data.maintenancePlans || [],
         maintenanceTasks: data.maintenanceTasks || [],
+        otpremnicaDocuments: data.otpremnicaDocuments || [],
         currentUser: data.users && data.users.length > 0 ? data.users[0] : STUB_USER,
       });
     } catch (error) {
@@ -545,6 +552,85 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
       }));
     } catch (err) {
       console.error('Error marking notification read:', err);
+    }
+  },
+
+  generateOtpremnica: async (employeeId, projectId, transactionIds, notes) => {
+    try {
+      const currentUser = get().currentUser;
+      const created: any = await apiFetch('/otpremnica/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          employeeId,
+          projectId,
+          transactionIds: transactionIds || [],
+          notes,
+          createdById: currentUser?.id,
+        }),
+      });
+
+      const formattedDoc: OtpremnicaDocument = {
+        id: created.id,
+        documentNumber: created.documentNumber,
+        employeeId: created.employeeId,
+        employeeName: created.employee ? `${created.employee.firstName} ${created.employee.lastName}` : undefined,
+        employeeNumber: created.employee?.employeeNumber,
+        employeeDepartment: created.employee?.department,
+        projectId: created.projectId,
+        projectName: created.project?.name,
+        projectCode: created.project?.projectCode,
+        createdById: created.createdById,
+        createdByName: created.createdBy ? `${created.createdBy.firstName} ${created.createdBy.lastName}` : undefined,
+        issueDate: created.issueDate.slice(0, 10),
+        notes: created.notes,
+        transactionIds: created.transactionIds || [],
+        createdAt: created.createdAt,
+      };
+
+      set((state) => ({
+        otpremnicaDocuments: [formattedDoc, ...state.otpremnicaDocuments],
+      }));
+
+      get().addAuditLog('OtpremnicaDocument', created.id, 'OTPREMNICA_GENERATED', {
+        documentNumber: created.documentNumber,
+        employeeId,
+      });
+
+      return formattedDoc;
+    } catch (err) {
+      console.error('Error generating Otpremnica document:', err);
+      return null;
+    }
+  },
+
+  startToolboxInventory: async (toolBoxId, title, notes) => {
+    try {
+      const currentUser = get().currentUser;
+      const created: any = await apiFetch('/inventory-checks/toolbox/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          toolBoxId,
+          title,
+          notes,
+          performedById: currentUser?.id,
+        }),
+      });
+
+      await get().fetchInitialData();
+      return created;
+    } catch (err) {
+      console.error('Error starting toolbox inventory:', err);
+      throw err;
+    }
+  },
+
+  fetchToolboxInventoryHistory: async (toolBoxId) => {
+    try {
+      const history: any[] = await apiFetch(`/toolboxes/${toolBoxId}/inventory-history`);
+      return history || [];
+    } catch (err) {
+      console.error('Error fetching toolbox inventory history:', err);
+      return [];
     }
   },
 }));

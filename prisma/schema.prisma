@@ -80,6 +80,7 @@ model User {
   inventoryChecks  InventoryCheck[]
   documents        Document[]
   notifications    Notification[]
+  otpremnicaDocs   OtpremnicaDocument[]
 
   @@map("users")
 }
@@ -139,6 +140,7 @@ model Employee {
   transactions     AssetTransaction[]
   maintenancePlans MaintenancePlan[]
   maintenanceTasks MaintenanceTask[]
+  otpremnicaDocs   OtpremnicaDocument[]
 
   @@map("employees")
 }
@@ -189,6 +191,7 @@ model ToolBox {
   updatedAt    DateTime      @updatedAt
 
   items        ToolBoxItem[]
+  inventoryChecks InventoryCheck[]
 
   @@map("tool_boxes")
 }
@@ -270,7 +273,8 @@ model Project {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
-  transactions AssetTransaction[]
+  transactions   AssetTransaction[]
+  otpremnicaDocs OtpremnicaDocument[]
 
   @@map("projects")
 }
@@ -281,6 +285,8 @@ model InventoryCheck {
   title          String
   performedById  String
   performedBy    User                 @relation(fields: [performedById], references: [id])
+  toolBoxId      String?
+  toolBox        ToolBox?             @relation(fields: [toolBoxId], references: [id], onDelete: SetNull)
   checkDate      DateTime             @default(now())
   status         String               @default("IN_PROGRESS")
   totalAssets    Int                  @default(0)
@@ -293,6 +299,23 @@ model InventoryCheck {
   items          InventoryCheckItem[]
 
   @@map("inventory_checks")
+}
+
+model OtpremnicaDocument {
+  id             String    @id @default(uuid())
+  documentNumber String    @unique
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id])
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id])
+  createdById    String
+  createdBy      User      @relation(fields: [createdById], references: [id])
+  issueDate      DateTime  @default(now())
+  notes          String?
+  transactionIds String[]
+  createdAt      DateTime  @default(now())
+
+  @@map("otpremnica_documents")
 }
 
 model InventoryCheckItem {
