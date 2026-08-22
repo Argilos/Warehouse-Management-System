@@ -556,7 +556,7 @@ export const Header: React.FC = () => {
               </div>
               <div className="text-left text-xs">
                 <p className="font-semibold text-slate-800 leading-tight">{currentUser.firstName} {currentUser.lastName}</p>
-                <p className="text-[10px] text-slate-400 font-mono capitalize">{activeRole.replace('_', ' ')}</p>
+                <p className="text-[10px] text-slate-400 font-mono capitalize">{t(activeRole)}</p>
               </div>
             </div>
 

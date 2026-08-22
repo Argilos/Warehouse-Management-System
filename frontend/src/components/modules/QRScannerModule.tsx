@@ -389,7 +389,7 @@ export const QRScannerModule: React.FC = () => {
                     {/* Dynamic Action Buttons */}
                     <div>
                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-                        {t('Available Field Actions')} ({activeRole.replace('_', ' ')})
+                        {t('Available Field Actions')} ({t(activeRole)})
                       </h4>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
