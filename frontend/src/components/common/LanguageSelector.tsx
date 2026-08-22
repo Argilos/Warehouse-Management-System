@@ -43,7 +43,7 @@ export const LanguageSelector: React.FC = () => {
                             className={`w-full flex items-center justify-between px-4 py-2 text-xs transition-colors hover:bg-brand-50 ${language === 'bs' ? 'text-brand-700 bg-brand-50/50' : 'text-slate-600'
                                 }`}
                         >
-                            <span className="font-semibold">Bosanski</span>
+                            <span className="font-semibold">🇧🇦 Bosanski</span>
                             {language === 'bs' && <Check className="w-3.5 h-3.5 text-brand-600" />}
                         </button>
                         <button
@@ -51,8 +51,16 @@ export const LanguageSelector: React.FC = () => {
                             className={`w-full flex items-center justify-between px-4 py-2 text-xs transition-colors hover:bg-brand-50 ${language === 'en' ? 'text-brand-700 bg-brand-50/50' : 'text-slate-600'
                                 }`}
                         >
-                            <span className="font-semibold">English</span>
+                            <span className="font-semibold">🇬🇧 English</span>
                             {language === 'en' && <Check className="w-3.5 h-3.5 text-brand-600" />}
+                        </button>
+                        <button
+                            onClick={() => selectLanguage('de')}
+                            className={`w-full flex items-center justify-between px-4 py-2 text-xs transition-colors hover:bg-brand-50 ${language === 'de' ? 'text-brand-700 bg-brand-50/50' : 'text-slate-600'
+                                }`}
+                        >
+                            <span className="font-semibold">🇩🇪 Deutsch</span>
+                            {language === 'de' && <Check className="w-3.5 h-3.5 text-brand-600" />}
                         </button>
                     </div>
                 </div>

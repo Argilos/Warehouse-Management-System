@@ -13,7 +13,7 @@ export const useLanguageStore = create<LanguageState>()(
         (set, get) => ({
             language: 'bs',
             setLanguage: (lang) => set({ language: lang }),
-            t: (key) => translations[get().language]?.[key] ?? key,
+            t: (key) => translations[get().language]?.[key] ?? translations['en']?.[key] ?? key,
         }),
         {
             name: 'language-storage',

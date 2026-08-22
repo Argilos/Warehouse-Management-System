@@ -71,7 +71,7 @@ export const AuditLogModule: React.FC = () => {
                     <td className="px-4 py-3 font-sans font-semibold text-slate-800">{log.userName}</td>
                     <td className="px-4 py-3 text-[10px]">
                       <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-sans font-semibold">
-                        {log.userRole}
+                        {t(log.userRole)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-brand-600 font-semibold">{log.entity}</td>

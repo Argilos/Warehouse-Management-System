@@ -70,10 +70,10 @@ export const UserManagementModule: React.FC = () => {
                             u.role === 'POWER_USER' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                               'bg-emerald-50 text-emerald-700 border-emerald-200'
                         }`}>
-                        {u.role.replace('_', ' ')}
+                        {t(u.role)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-emerald-600">ACTIVE</td>
+                    <td className="px-4 py-3 font-semibold text-emerald-600">{t('ACTIVE')}</td>
                     <td className="px-4 py-3 text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))
