@@ -429,6 +429,20 @@ export const QRScannerModule: React.FC = () => {
                           </div>
                         )}
 
+                        {matchedAsset.status === 'DAMAGED' && (
+                          <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-xs font-semibold flex items-center justify-between">
+                            <span>{t('Tool is DAMAGED (Cannot be issued)')}</span>
+                            <Wrench className="w-4 h-4 text-amber-600" />
+                          </div>
+                        )}
+
+                        {matchedAsset.status === 'IN_SERVICE' && (
+                          <div className="p-3 bg-blue-50 border border-blue-300 text-blue-900 rounded-xl text-xs font-semibold flex items-center justify-between">
+                            <span>{t('Tool is IN SERVICE / Under Repair')}</span>
+                            <Wrench className="w-4 h-4 text-blue-600" />
+                          </div>
+                        )}
+
                         <button
                           onClick={() => handleReportDamage(matchedAsset)}
                           className="p-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold flex items-center justify-between transition-all"

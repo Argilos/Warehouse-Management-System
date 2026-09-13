@@ -715,13 +715,15 @@ router.post('/transactions/issue', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No assets specified for issuance' });
     }
 
-    // 1. Guard against non-issuable status (LOST, MISSING, DAMAGED, RETIRED)
+    // 1. Guard against non-issuable status (LOST, MISSING, DAMAGED, IN_SERVICE, IN_CALIBRATION, RETIRED)
     const targetAssets = await prisma.asset.findMany({
       where: { id: { in: targetIds } },
     });
 
+    const nonIssuableStatuses = new Set(['LOST', 'MISSING', 'DAMAGED', 'IN_SERVICE', 'IN_CALIBRATION', 'RETIRED']);
     for (const ast of targetAssets) {
-      if (ast.status === 'LOST' || ast.status === 'DAMAGED' || ast.status === 'RETIRED' || (ast as any).status === 'MISSING') {
+      const statusUpper = (ast.status || '').toUpperCase();
+      if (nonIssuableStatuses.has(statusUpper)) {
         return res.status(400).json({
           error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be issued.`
         });
@@ -1008,13 +1010,15 @@ router.post('/toolboxes', async (req: Request, res: Response) => {
 
     const ids = (assetIds || []) as string[];
     if (ids.length > 0) {
-      // 1. Validate that no tool is marked LOST, MISSING, DAMAGED, or RETIRED
+      // 1. Validate that no tool is marked LOST, MISSING, DAMAGED, IN_SERVICE, IN_CALIBRATION, or RETIRED
       const selectedAssets = await prisma.asset.findMany({
         where: { id: { in: ids } },
       });
 
+      const nonPackableStatuses = new Set(['LOST', 'MISSING', 'DAMAGED', 'IN_SERVICE', 'IN_CALIBRATION', 'RETIRED']);
       for (const ast of selectedAssets) {
-        if (ast.status === 'LOST' || ast.status === 'DAMAGED' || ast.status === 'RETIRED' || (ast as any).status === 'MISSING') {
+        const statusUpper = (ast.status || '').toUpperCase();
+        if (nonPackableStatuses.has(statusUpper)) {
           return res.status(400).json({
             error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be added to a kit/crate.`
           });
@@ -1074,8 +1078,10 @@ router.post('/toolboxes/:id/items', async (req: Request, res: Response) => {
       where: { id: { in: ids } },
     });
 
+    const nonPackableStatuses = new Set(['LOST', 'MISSING', 'DAMAGED', 'IN_SERVICE', 'IN_CALIBRATION', 'RETIRED']);
     for (const ast of selectedAssets) {
-      if (ast.status === 'LOST' || ast.status === 'DAMAGED' || ast.status === 'RETIRED' || (ast as any).status === 'MISSING') {
+      const statusUpper = (ast.status || '').toUpperCase();
+      if (nonPackableStatuses.has(statusUpper)) {
         return res.status(400).json({
           error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be added to a kit/crate.`
         });
@@ -1117,9 +1123,23 @@ router.post('/toolboxes/issue', async (req: Request, res: Response) => {
 
     const box = await prisma.toolBox.findUnique({
       where: { id: boxId },
-      include: { items: true },
+      include: { items: { include: { asset: true } } },
     });
     if (!box) return res.status(404).json({ error: 'ToolBox not found' });
+
+    // Defensive check: ensure no component tool in the toolbox is DAMAGED, IN_SERVICE, IN_CALIBRATION, LOST, MISSING, or RETIRED
+    const nonIssuableStatuses = new Set(['LOST', 'MISSING', 'DAMAGED', 'IN_SERVICE', 'IN_CALIBRATION', 'RETIRED']);
+    for (const item of box.items) {
+      const ast = item.asset;
+      if (ast) {
+        const statusUpper = (ast.status || '').toUpperCase();
+        if (nonIssuableStatuses.has(statusUpper)) {
+          return res.status(400).json({
+            error: `Tool "${ast.name}" (${ast.assetNumber}) in this toolbox has status ${ast.status} and the toolbox cannot be issued.`
+          });
+        }
+      }
+    }
 
     await prisma.toolBox.update({
       where: { id: boxId },
@@ -1179,8 +1199,12 @@ router.post('/toolboxes/return', async (req: Request, res: Response) => {
 
     const assetIds = box.items.map((i) => i.assetId);
     if (assetIds.length > 0) {
+      // Only set AVAILABLE for tools that are not DAMAGED, LOST, or RETIRED
       await prisma.asset.updateMany({
-        where: { id: { in: assetIds } },
+        where: {
+          id: { in: assetIds },
+          status: { notIn: ['LOST', 'RETIRED', 'DAMAGED'] }
+        },
         data: { status: 'AVAILABLE' },
       });
 
@@ -1355,7 +1379,7 @@ router.post('/calibrations/send-to-lab', async (req: Request, res: Response) => 
 
     const existingAsset = await prisma.asset.findUnique({ where: { id: assetId } });
     if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
-    if (existingAsset.status === 'LOST' || existingAsset.status === 'DAMAGED' || existingAsset.status === 'RETIRED' || (existingAsset as any).status === 'MISSING') {
+    if (existingAsset.status === 'LOST' || existingAsset.status === 'DAMAGED' || existingAsset.status === 'RETIRED' || existingAsset.status === 'IN_SERVICE' || (existingAsset as any).status === 'MISSING') {
       return res.status(400).json({
         error: `Tool "${existingAsset.name}" has status ${existingAsset.status} and cannot be sent to calibration lab.`
       });
@@ -1377,7 +1401,7 @@ router.post('/calibrations', async (req: Request, res: Response) => {
 
     const existingAsset = await prisma.asset.findUnique({ where: { id: body.assetId } });
     if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
-    if (existingAsset.status === 'LOST' || existingAsset.status === 'DAMAGED' || existingAsset.status === 'RETIRED' || (existingAsset as any).status === 'MISSING') {
+    if (existingAsset.status === 'LOST' || existingAsset.status === 'DAMAGED' || existingAsset.status === 'RETIRED' || existingAsset.status === 'IN_SERVICE' || (existingAsset as any).status === 'MISSING') {
       return res.status(400).json({
         error: `Tool "${existingAsset.name}" has status ${existingAsset.status} and cannot be calibrated.`
       });

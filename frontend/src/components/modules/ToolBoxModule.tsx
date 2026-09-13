@@ -36,13 +36,16 @@ export const ToolBoxModule: React.FC = () => {
   );
 
   // Tools eligible for packing into a crate/kit:
-  // Exclude LOST, MISSING, DAMAGED, and RETIRED tools, as well as tools already inside an active crate.
+  // Exclude LOST, MISSING, DAMAGED, IN_SERVICE, IN_CALIBRATION, and RETIRED tools, as well as tools already inside an active crate.
   const packableAssets = assets.filter((ast) => {
+    const statusUpper = (ast.status || '').toUpperCase();
     const isExcludedStatus =
-      ast.status === 'LOST' ||
-      ast.status === 'MISSING' ||
-      ast.status === 'DAMAGED' ||
-      ast.status === 'RETIRED';
+      statusUpper === 'LOST' ||
+      statusUpper === 'MISSING' ||
+      statusUpper === 'DAMAGED' ||
+      statusUpper === 'IN_SERVICE' ||
+      statusUpper === 'IN_CALIBRATION' ||
+      statusUpper === 'RETIRED';
     return !isExcludedStatus && !alreadyCratedAssetIds.has(ast.id);
   });
 
@@ -202,13 +205,21 @@ export const ToolBoxModule: React.FC = () => {
 
                   {/* Action Buttons */}
                   <div className="flex items-center gap-2">
-                    {tb.status === 'ASSIGNED' && (
+                    {tb.status === 'ASSIGNED' ? (
                       <button
                         onClick={() => handleConfirmReturnBox(tb)}
                         className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-semibold text-xs flex items-center justify-center gap-1 shadow-sm transition-all"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>{t('Return Kit')}</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenIssueModal(tb)}
+                        className="flex-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded font-semibold text-xs flex items-center justify-center gap-1 shadow-sm transition-all"
+                      >
+                        <ArrowLeftRight className="w-3.5 h-3.5" />
+                        <span>{t('Issue Kit')}</span>
                       </button>
                     )}
 

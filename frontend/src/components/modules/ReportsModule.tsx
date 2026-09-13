@@ -184,23 +184,31 @@ export const ReportsModule: React.FC = () => {
     .filter(a => a.status === 'LOST' || a.status === 'MISSING')
     .reduce((sum, a) => sum + (a.currentValue ?? a.purchasePrice ?? 0), 0);
 
-  // Export PDF
-  const handleExportPDF = () => {
-    addAuditLog('Report', activePreset, 'PDF_EXPORTED', { preset: activePreset, recordCount: filteredAssets.length });
-
-    const activeFilterLabels = [];
-    if (searchQuery) activeFilterLabels.push(`Search: "${searchQuery}"`);
-    if (selectedCategory !== 'ALL') activeFilterLabels.push(`Category: ${selectedCategory}`);
-    if (selectedStatus !== 'ALL') activeFilterLabels.push(`Status: ${selectedStatus}`);
+  // Active Filter Summary Labels (for both export and printable view)
+  const activeFilterLabels = useMemo(() => {
+    const labels: string[] = [];
+    if (searchQuery) labels.push(`${t('Search')}: "${searchQuery}"`);
+    if (selectedCategory !== 'ALL') labels.push(`${t('Category')}: ${selectedCategory}`);
+    if (selectedStatus !== 'ALL') labels.push(`${t('Status')}: ${selectedStatus}`);
     if (selectedEmployeeId !== 'ALL') {
       const emp = employees.find(e => e.id === selectedEmployeeId);
-      if (emp) activeFilterLabels.push(`Employee: ${emp.firstName} ${emp.lastName}`);
+      if (emp) labels.push(`${t('Employee')}: ${emp.firstName} ${emp.lastName}`);
     }
     if (selectedProjectId !== 'ALL') {
       const proj = projects.find(p => p.id === selectedProjectId);
-      if (proj) activeFilterLabels.push(`Project: ${proj.name}`);
+      if (proj) labels.push(`${t('Project')}: ${proj.name}`);
     }
-    if (dateRangePreset !== 'ALL') activeFilterLabels.push(`Date Range: ${dateRangePreset}`);
+    if (selectedLocation !== 'ALL') labels.push(`${t('Location')}: ${selectedLocation}`);
+    if (dateRangePreset !== 'ALL') labels.push(`${t('Date Range')}: ${dateRangePreset}`);
+    if (activePreset === 'ASSET_MOVEMENT_HISTORY' && selectedTransactionType !== 'ALL') {
+      labels.push(`${t('Action')}: ${selectedTransactionType}`);
+    }
+    return labels;
+  }, [searchQuery, selectedCategory, selectedStatus, selectedEmployeeId, selectedProjectId, selectedLocation, dateRangePreset, activePreset, selectedTransactionType, employees, projects, t]);
+
+  // Export PDF
+  const handleExportPDF = () => {
+    addAuditLog('Report', activePreset, 'PDF_EXPORTED', { preset: activePreset, recordCount: filteredAssets.length });
 
     if (activePreset === 'ASSET_MOVEMENT_HISTORY') {
       const columns = [
@@ -288,7 +296,7 @@ export const ReportsModule: React.FC = () => {
     <div className="space-y-5">
 
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-5">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-5 no-print">
         <div>
           <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
             <FileText className="w-5 h-5 text-brand-600" />
@@ -318,7 +326,7 @@ export const ReportsModule: React.FC = () => {
       </div>
 
       {/* Report Categories Tab Navigation */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-surface-200 scrollbar-none">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-surface-200 scrollbar-none no-print">
         {[
           { id: 'ALL_ASSETS', label: t('All Assets Register'), icon: PackageCheck },
           { id: 'ASSETS_BY_EMPLOYEE', label: t('Assets by Employee'), icon: User },
@@ -347,7 +355,7 @@ export const ReportsModule: React.FC = () => {
       </div>
 
       {/* Advanced Combinable Filter Toolbar */}
-      <div className="glass-panel p-4 space-y-3">
+      <div className="glass-panel p-4 space-y-3 no-print">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
             <Filter className="w-3.5 h-3.5 text-brand-600" />
@@ -460,213 +468,250 @@ export const ReportsModule: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-card p-4">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Filtered Record Count')}</p>
-          <h3 className="text-xl font-extrabold text-slate-800 mt-1">
-            {activePreset === 'ASSET_MOVEMENT_HISTORY' ? filteredTransactions.length : activePreset === 'OTPREMNICA_ARCHIVE' ? otpremnicaDocuments.length : filteredAssets.length}
-          </h3>
-        </div>
-
-        <div className="glass-card p-4">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Total Acquisition Value')}</p>
-          <h3 className="text-xl font-extrabold text-blue-600 mt-1">{formatCurrency(totalOriginalVal)}</h3>
-        </div>
-
-        <div className="glass-card p-4">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Net Active Book Value')}</p>
-          <h3 className="text-xl font-extrabold text-emerald-600 mt-1">{formatCurrency(totalCurrentVal - totalLostVal)}</h3>
-        </div>
-
-        <div className="glass-card p-4">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Lost Fleet Value (Written Off)')}</p>
-          <h3 className={`text-xl font-extrabold mt-1 ${totalLostVal > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
-            {formatCurrency(totalLostVal)}
-          </h3>
-        </div>
-      </div>
-
-      {/* MAIN DATA PREVIEW TABLE */}
-      {activePreset === 'OTPREMNICA_ARCHIVE' ? (
-        /* OTPREMNICE ARCHIVE VIEW */
-        <div className="glass-panel p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-800">{t('Otpremnica Equipment Handover Archive')} ({otpremnicaDocuments.length})</h3>
+      {/* PRINTABLE REPORT SECTION */}
+      <div id="printable-report" className="printable-area space-y-5">
+        {/* Printable-only Official Report Header */}
+        <div className="hidden print:block border-b-2 border-slate-900 pb-3 mb-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                {t('Enterprise Warehouse Management')}
+              </h1>
+              <h2 className="text-sm font-bold text-slate-700 mt-0.5">
+                {t(activePreset.replace(/_/g, ' '))} {t('Report')}
+              </h2>
+            </div>
+            <div className="text-right text-xs text-slate-600">
+              <p>{t('Date')}: <span className="font-semibold text-slate-900">{new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></p>
+              <p>{t('Records')}: <span className="font-bold text-slate-900">
+                {activePreset === 'ASSET_MOVEMENT_HISTORY' ? filteredTransactions.length : activePreset === 'OTPREMNICA_ARCHIVE' ? otpremnicaDocuments.length : filteredAssets.length}
+              </span></p>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-3 font-semibold">{t('Document No.')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Date')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Employee')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Department')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Project')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Issued By')}</th>
-                  <th className="px-4 py-3 text-right font-semibold">{t('Action')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-100 text-slate-700">
-                {otpremnicaDocuments.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                      {t('No Otpremnica handover receipts generated yet.')}
-                    </td>
+          {/* Applied Filters Summary Banner */}
+          <div className="mt-2.5 p-2 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-700 flex flex-wrap items-center gap-1.5">
+            <span className="font-bold text-slate-900 uppercase text-[10px] mr-1">{t('Applied Filters')}:</span>
+            {activeFilterLabels.length > 0 ? (
+              activeFilterLabels.map((f, i) => (
+                <span key={i} className="inline-flex items-center bg-white px-2 py-0.5 rounded border border-slate-300 font-medium text-slate-800 text-[10px]">
+                  {f}
+                </span>
+              ))
+            ) : (
+              <span className="text-slate-500 italic text-[10px]">{t('All Records (No filters applied)')}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Summary KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="glass-card p-4">
+            <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Filtered Record Count')}</p>
+            <h3 className="text-xl font-extrabold text-slate-800 mt-1">
+              {activePreset === 'ASSET_MOVEMENT_HISTORY' ? filteredTransactions.length : activePreset === 'OTPREMNICA_ARCHIVE' ? otpremnicaDocuments.length : filteredAssets.length}
+            </h3>
+          </div>
+
+          <div className="glass-card p-4">
+            <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Total Acquisition Value')}</p>
+            <h3 className="text-xl font-extrabold text-blue-600 mt-1">{formatCurrency(totalOriginalVal)}</h3>
+          </div>
+
+          <div className="glass-card p-4">
+            <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Net Active Book Value')}</p>
+            <h3 className="text-xl font-extrabold text-emerald-600 mt-1">{formatCurrency(totalCurrentVal - totalLostVal)}</h3>
+          </div>
+
+          <div className="glass-card p-4">
+            <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Lost Fleet Value (Written Off)')}</p>
+            <h3 className={`text-xl font-extrabold mt-1 ${totalLostVal > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+              {formatCurrency(totalLostVal)}
+            </h3>
+          </div>
+        </div>
+
+        {/* MAIN DATA PREVIEW TABLE */}
+        {activePreset === 'OTPREMNICA_ARCHIVE' ? (
+          /* OTPREMNICE ARCHIVE VIEW */
+          <div className="glass-panel p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-sm text-slate-800">{t('Otpremnica Equipment Handover Archive')} ({otpremnicaDocuments.length})</h3>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
+                    <th className="px-4 py-3 font-semibold">{t('Document No.')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Date')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Employee')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Department')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Project')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Issued By')}</th>
+                    <th className="px-4 py-3 text-right font-semibold">{t('Action')}</th>
                   </tr>
-                ) : (
-                  otpremnicaDocuments.map((doc) => (
-                    <tr key={doc.id} className="hover:bg-surface-50 transition-colors">
-                      <td className="px-4 py-3 font-mono font-bold text-brand-600">{doc.documentNumber}</td>
-                      <td className="px-4 py-3 text-slate-500">{doc.issueDate}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">{doc.employeeName || 'N/A'}</td>
-                      <td className="px-4 py-3 text-slate-500">{doc.employeeDepartment || 'Field Ops'}</td>
-                      <td className="px-4 py-3 text-slate-600">{doc.projectName || t('General Issue')}</td>
-                      <td className="px-4 py-3 text-slate-500">{doc.createdByName || 'Warehouse Manager'}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setSelectedOtpremnica(doc);
-                              setIsOtpremnicaOpen(true);
-                            }}
-                            className="px-2.5 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded border border-brand-100 text-[11px] font-medium flex items-center gap-1"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>{t('View & Print')}</span>
-                          </button>
-                          <button
-                            onClick={() => exportOtpremnicaPDF(doc)}
-                            className="p-1 bg-surface-100 hover:bg-surface-200 text-slate-600 rounded border border-surface-200"
-                            title={t('Download PDF')}
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                </thead>
+                <tbody className="divide-y divide-surface-100 text-slate-700">
+                  {otpremnicaDocuments.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                        {t('No Otpremnica handover receipts generated yet.')}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    otpremnicaDocuments.map((doc) => (
+                      <tr key={doc.id} className="hover:bg-surface-50 transition-colors">
+                        <td className="px-4 py-3 font-mono font-bold text-brand-600">{doc.documentNumber}</td>
+                        <td className="px-4 py-3 text-slate-500">{doc.issueDate}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{doc.employeeName || 'N/A'}</td>
+                        <td className="px-4 py-3 text-slate-500">{doc.employeeDepartment || 'Field Ops'}</td>
+                        <td className="px-4 py-3 text-slate-600">{doc.projectName || t('General Issue')}</td>
+                        <td className="px-4 py-3 text-slate-500">{doc.createdByName || 'Warehouse Manager'}</td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setSelectedOtpremnica(doc);
+                                setIsOtpremnicaOpen(true);
+                              }}
+                              className="px-2.5 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded border border-brand-100 text-[11px] font-medium flex items-center gap-1"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{t('View & Print')}</span>
+                            </button>
+                            <button
+                              onClick={() => exportOtpremnicaPDF(doc)}
+                              className="p-1 bg-surface-100 hover:bg-surface-200 text-slate-600 rounded border border-surface-200"
+                              title={t('Download PDF')}
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      ) : activePreset === 'ASSET_MOVEMENT_HISTORY' ? (
-        /* ASSET MOVEMENT LOG TABLE */
-        <div className="glass-panel p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-800">{t('Asset Movement & Loan History')} ({filteredTransactions.length})</h3>
-          </div>
+        ) : activePreset === 'ASSET_MOVEMENT_HISTORY' ? (
+          /* ASSET MOVEMENT LOG TABLE */
+          <div className="glass-panel p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-sm text-slate-800">{t('Asset Movement & Loan History')} ({filteredTransactions.length})</h3>
+            </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-3 font-semibold">{t('Date & Time')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Action')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Asset Code')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Asset Name')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Employee')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Project')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Performed By')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-100 text-slate-700">
-                {filteredTransactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                      {t('No movement history records found matching selected filters.')}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
+                    <th className="px-4 py-3 font-semibold">{t('Date & Time')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Action')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Asset Code')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Asset Name')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Employee')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Project')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Performed By')}</th>
                   </tr>
-                ) : (
-                  filteredTransactions.map((trx) => (
-                    <tr key={trx.id} className="hover:bg-surface-50 transition-colors">
-                      <td className="px-4 py-3 text-slate-400">{new Date(trx.transactionDate).toLocaleString()}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${trx.transactionType === 'ISSUE' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          }`}>
-                          {trx.transactionType}
-                        </span>
+                </thead>
+                <tbody className="divide-y divide-surface-100 text-slate-700">
+                  {filteredTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                        {t('No movement history records found matching selected filters.')}
                       </td>
-                      <td className="px-4 py-3 font-mono font-bold text-brand-600">{trx.assetNumber}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">{trx.assetName}</td>
-                      <td className="px-4 py-3 text-slate-600">{trx.employeeName || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{trx.projectName || '—'}</td>
-                      <td className="px-4 py-3 text-slate-500">{trx.performedByName}</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredTransactions.map((trx) => (
+                      <tr key={trx.id} className="hover:bg-surface-50 transition-colors">
+                        <td className="px-4 py-3 text-slate-400">{new Date(trx.transactionDate).toLocaleString()}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${trx.transactionType === 'ISSUE' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}>
+                            {trx.transactionType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-mono font-bold text-brand-600">{trx.assetNumber}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{trx.assetName}</td>
+                        <td className="px-4 py-3 text-slate-600">{trx.employeeName || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{trx.projectName || '—'}</td>
+                        <td className="px-4 py-3 text-slate-500">{trx.performedByName}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      ) : (
-        /* ASSET REGISTER TABLE PREVIEW */
-        <div className="glass-panel p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-800">{t('Report Data Preview')} ({filteredAssets.length} {t('records')})</h3>
-          </div>
+        ) : (
+          /* ASSET REGISTER TABLE PREVIEW */
+          <div className="glass-panel p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-sm text-slate-800">{t('Report Data Preview')} ({filteredAssets.length} {t('records')})</h3>
+            </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
-                  <th className="px-4 py-3 font-semibold">{t('Asset Code')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Asset Name')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Category')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Status')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Location')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Current Custody / Holder')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Acquisition Cost')}</th>
-                  <th className="px-4 py-3 font-semibold">{t('Book Value')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-100 text-slate-700">
-                {filteredAssets.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                      {t('No assets found matching the selected report criteria.')}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
+                    <th className="px-4 py-3 font-semibold">{t('Asset Code')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Asset Name')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Category')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Status')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Location')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Current Custody / Holder')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Acquisition Cost')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('Book Value')}</th>
                   </tr>
-                ) : (
-                  filteredAssets.map((ast) => (
-                    <tr key={ast.id} className="hover:bg-surface-50 transition-colors">
-                      <td className="px-4 py-3 font-mono font-bold text-brand-600">{ast.assetNumber}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">{ast.name}</td>
-                      <td className="px-4 py-3 text-slate-500">{ast.category}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${ast.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : ast.status === 'ISSUED' ? 'bg-blue-50 text-blue-700 border-blue-200' : ast.status === 'MISSING' || ast.status === 'LOST' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}>
-                          {ast.status}
-                        </span>
+                </thead>
+                <tbody className="divide-y divide-surface-100 text-slate-700">
+                  {filteredAssets.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
+                        {t('No assets found matching the selected report criteria.')}
                       </td>
-                      <td className="px-4 py-3 text-slate-500">{ast.location}</td>
-                      <td className="px-4 py-3 text-slate-700 font-medium">
-                        {selectedEmployeeId !== 'ALL' ? (
-                          ast.holderEmployeeId === selectedEmployeeId ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                              {t('Currently Issued')}
-                            </span>
+                    </tr>
+                  ) : (
+                    filteredAssets.map((ast) => (
+                      <tr key={ast.id} className="hover:bg-surface-50 transition-colors">
+                        <td className="px-4 py-3 font-mono font-bold text-brand-600">{ast.assetNumber}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{ast.name}</td>
+                        <td className="px-4 py-3 text-slate-500">{ast.category}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${ast.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : ast.status === 'ISSUED' ? 'bg-blue-50 text-blue-700 border-blue-200' : ast.status === 'MISSING' || ast.status === 'LOST' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
+                            {ast.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">{ast.location}</td>
+                        <td className="px-4 py-3 text-slate-700 font-medium">
+                          {selectedEmployeeId !== 'ALL' ? (
+                            ast.holderEmployeeId === selectedEmployeeId ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                {t('Currently Issued')}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                {t('Previously Rented')} ({ast.holderEmployeeName || t('Warehouse Storage')})
+                              </span>
+                            )
                           ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                              {t('Previously Rented')} ({ast.holderEmployeeName || t('Warehouse Storage')})
-                            </span>
-                          )
-                        ) : (
-                          ast.holderEmployeeName || t('Warehouse Storage')
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-800 font-semibold">{formatCurrency(ast.purchasePrice)}</td>
-                      <td className="px-4 py-3 text-emerald-600 font-bold">{formatCurrency(ast.currentValue)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                            ast.holderEmployeeName || t('Warehouse Storage')
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-800 font-semibold">{formatCurrency(ast.purchasePrice)}</td>
+                        <td className="px-4 py-3 text-emerald-600 font-bold">{formatCurrency(ast.currentValue)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Otpremnica Document Preview Modal */}
       <OtpremnicaModal

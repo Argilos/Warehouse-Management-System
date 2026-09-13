@@ -83,13 +83,17 @@ export function App() {
     <div className="min-h-screen flex flex-col bg-surface-50 text-slate-800 selection:bg-brand-200 selection:text-brand-900">
       
       {/* Global Application Header & Role Switcher */}
-      <Header />
+      <div className="no-print">
+        <Header />
+      </div>
 
       {/* Main Content Layout */}
       <div className="flex-1 flex max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 gap-5">
         
         {/* Navigation Sidebar */}
-        <Sidebar />
+        <div className="no-print">
+          <Sidebar />
+        </div>
 
         {/* Dynamic Module Content Viewport */}
         <main className="flex-1 overflow-x-hidden min-w-0">
@@ -99,7 +103,9 @@ export function App() {
       </div>
 
       {/* Global Application Footer */}
-      <Footer />
+      <div className="no-print">
+        <Footer />
+      </div>
 
       {/* Global 360 Asset Profile Modal */}
       <AssetPersonalCardModal

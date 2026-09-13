@@ -653,6 +653,241 @@ async function runTests() {
     assertEquals(planAdvanced, true, 'Plan schedule must be advanced');
   });
 
+  // --------------------------------------------------------------------------
+  // TEST SUITE 5: FILTERED REPORT DATASET INTEGRITY (BUG 1)
+  // --------------------------------------------------------------------------
+  console.log('\nTest Suite 5: Filtered Report Dataset & Print Data Shape Integrity');
+
+  await test('5.1 Multi-criteria filtered report data generation maintains exact filter integrity without empty state', async () => {
+    const rawAssets = [
+      { id: 'a1', name: 'Drill 1', category: 'POWER_TOOLS', status: 'AVAILABLE', purchaseDate: new Date('2026-01-10'), purchasePrice: 200, currentValue: 180 },
+      { id: 'a2', name: 'Drill 2', category: 'POWER_TOOLS', status: 'ISSUED', purchaseDate: new Date('2026-03-15'), purchasePrice: 250, currentValue: 220 },
+      { id: 'a3', name: 'Multimeter 1', category: 'MEASURING', status: 'AVAILABLE', purchaseDate: new Date('2026-02-20'), purchasePrice: 150, currentValue: 140 },
+      { id: 'a4', name: 'Damaged Saw', category: 'POWER_TOOLS', status: 'DAMAGED', purchaseDate: new Date('2026-05-01'), purchasePrice: 300, currentValue: 100 },
+    ];
+
+    // Combination 1: Category = POWER_TOOLS + Date Range (after 2026-02-01)
+    const filteredComb1 = rawAssets.filter(a => a.category === 'POWER_TOOLS' && a.purchaseDate >= new Date('2026-02-01'));
+    assertEquals(filteredComb1.length, 2, 'Expected 2 power tools after Feb 2026');
+    assertEquals(filteredComb1.map(a => a.id).sort().join(','), 'a2,a4', 'Expected a2 and a4');
+
+    // Combination 2: Status = AVAILABLE + Category = MEASURING
+    const filteredComb2 = rawAssets.filter(a => a.status === 'AVAILABLE' && a.category === 'MEASURING');
+    assertEquals(filteredComb2.length, 1, 'Expected 1 measuring tool');
+    assertEquals(filteredComb2[0].id, 'a3', 'Expected a3');
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST SUITE 6: IN_SERVICE & DAMAGED STATUS BLOCKING (BUGS 2 & 4)
+  // --------------------------------------------------------------------------
+  console.log('\nTest Suite 6: IN_SERVICE & DAMAGED Tool Rejection on Issuance and Kit Creation');
+
+  await test('6.1 Issuing an IN_SERVICE asset via POST /transactions/issue is rejected with 400', async () => {
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-inservice-1',
+        name: 'Lathe Machine',
+        assetNumber: 'LM-01',
+        status: 'IN_SERVICE',
+      },
+    ];
+
+    const res = await apiRequest('POST', '/transactions/issue', {
+      assetIds: ['asset-inservice-1'],
+      employeeId: 'emp-1',
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request');
+    assert(
+      res.data.error && res.data.error.includes('has status IN_SERVICE and cannot be issued'),
+      `Expected error for in-service tool, got: ${res.data.error}`
+    );
+  });
+
+  await test('6.2 Adding an IN_SERVICE tool to a crate on creation is blocked with 400', async () => {
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-inservice-2',
+        name: 'Compressor',
+        assetNumber: 'CP-02',
+        status: 'IN_SERVICE',
+      },
+    ];
+
+    const res = await apiRequest('POST', '/toolboxes', {
+      name: 'Service Crate',
+      assetIds: ['asset-inservice-2'],
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request');
+    assert(
+      res.data.error && res.data.error.includes('has status IN_SERVICE and cannot be added to a kit/crate'),
+      `Expected error for in-service tool in crate, got: ${res.data.error}`
+    );
+  });
+
+  await test('6.3 Adding an IN_SERVICE tool to an existing crate via POST /toolboxes/:id/items is blocked with 400', async () => {
+    (prisma.toolBox as any).findUnique = async () => ({ id: 'box-existing-2', status: 'ACTIVE' });
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-inservice-3',
+        name: 'Hydraulic Jack',
+        assetNumber: 'HJ-03',
+        status: 'IN_SERVICE',
+      },
+    ];
+
+    const res = await apiRequest('POST', '/toolboxes/box-existing-2/items', {
+      assetIds: ['asset-inservice-3'],
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request');
+    assert(
+      res.data.error && res.data.error.includes('has status IN_SERVICE and cannot be added to a kit/crate'),
+      `Expected error for in-service tool in crate item, got: ${res.data.error}`
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST SUITE 7: TOOLBOX FULL LIFECYCLE: CREATE -> ISSUE -> RETURN -> RE-ISSUE (BUG 3)
+  // --------------------------------------------------------------------------
+  console.log('\nTest Suite 7: Full Toolbox Lifecycle: Create -> Issue -> Return -> Re-Issue');
+
+  await test('7.1 Toolbox can be created, issued to Emp A, returned to warehouse, and re-issued to Emp B', async () => {
+    let currentBoxStatus = 'UNASSIGNED';
+    let currentEmployeeId: string | null = null;
+    let toolStatuses: Record<string, string> = { 'tool-1': 'AVAILABLE', 'tool-2': 'AVAILABLE' };
+
+    // 1. Create Toolbox
+    (prisma.asset as any).findMany = async () => [
+      { id: 'tool-1', name: 'Socket Set', assetNumber: 'SK-01', status: 'AVAILABLE' },
+      { id: 'tool-2', name: 'Torque Wrench', assetNumber: 'TW-01', status: 'AVAILABLE' },
+    ];
+    (prisma.toolBoxItem as any).findFirst = async () => null;
+    (prisma.toolBox as any).create = async (args: any) => {
+      currentBoxStatus = args.data.status;
+      currentEmployeeId = args.data.employeeId;
+      return {
+        id: 'box-lifecycle-1',
+        boxNumber: 'TBX-LIFE-1',
+        name: 'Master Field Kit',
+        status: currentBoxStatus,
+        employeeId: currentEmployeeId,
+        items: [{ assetId: 'tool-1' }, { assetId: 'tool-2' }],
+      };
+    };
+
+    const createRes = await apiRequest('POST', '/toolboxes', {
+      boxNumber: 'TBX-LIFE-1',
+      name: 'Master Field Kit',
+      assetIds: ['tool-1', 'tool-2'],
+    });
+    assertEquals(createRes.status, 201, 'Toolbox creation should succeed');
+    assertEquals(currentBoxStatus, 'UNASSIGNED', 'New unassigned toolbox should be UNASSIGNED');
+
+    // 2. Issue to Employee A
+    (prisma.toolBox as any).findUnique = async () => ({
+      id: 'box-lifecycle-1',
+      boxNumber: 'TBX-LIFE-1',
+      status: currentBoxStatus,
+      employeeId: currentEmployeeId,
+      items: [
+        { assetId: 'tool-1', asset: { name: 'Socket Set', assetNumber: 'SK-01', status: 'AVAILABLE' } },
+        { assetId: 'tool-2', asset: { name: 'Torque Wrench', assetNumber: 'TW-01', status: 'AVAILABLE' } },
+      ],
+    });
+    (prisma.toolBox as any).update = async (args: any) => {
+      if (args.data.status) currentBoxStatus = args.data.status;
+      if ('employeeId' in args.data) currentEmployeeId = args.data.employeeId;
+      return { id: 'box-lifecycle-1', status: currentBoxStatus, employeeId: currentEmployeeId };
+    };
+    (prisma.asset as any).updateMany = async (args: any) => {
+      for (const id of args.where.id.in) {
+        toolStatuses[id] = args.data.status;
+      }
+    };
+    (prisma.employeeAsset as any).create = async () => ({ id: 'ea-1' });
+
+    const issue1Res = await apiRequest('POST', '/toolboxes/issue', {
+      boxId: 'box-lifecycle-1',
+      employeeId: 'emp-A',
+      notes: 'Issued to Technician A',
+    });
+    assertEquals(issue1Res.status, 200, 'Toolbox issue to Emp A should succeed');
+    assertEquals(currentBoxStatus, 'ASSIGNED', 'Status should be ASSIGNED after issue');
+    assertEquals(currentEmployeeId, 'emp-A', 'Assigned employee should be emp-A');
+    assertEquals(toolStatuses['tool-1'], 'ISSUED', 'Contained tools should become ISSUED');
+
+    // 3. Return Toolbox
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 2 });
+    const returnRes = await apiRequest('POST', '/toolboxes/return', {
+      boxId: 'box-lifecycle-1',
+    });
+    assertEquals(returnRes.status, 200, 'Toolbox return should succeed');
+    assertEquals(currentBoxStatus, 'UNASSIGNED', 'Status should transition back to UNASSIGNED');
+    assertEquals(currentEmployeeId, null, 'Employee should be reset to null');
+    assertEquals(toolStatuses['tool-1'], 'AVAILABLE', 'Tools should revert to AVAILABLE');
+
+    // 4. Re-issue to Employee B (proves it didn't disappear and can be checked out again)
+    const issue2Res = await apiRequest('POST', '/toolboxes/issue', {
+      boxId: 'box-lifecycle-1',
+      employeeId: 'emp-B',
+      notes: 'Re-issued to Technician B',
+    });
+    assertEquals(issue2Res.status, 200, 'Toolbox re-issue to Emp B should succeed');
+    assertEquals(currentBoxStatus, 'ASSIGNED', 'Status should transition back to ASSIGNED');
+    assertEquals(currentEmployeeId, 'emp-B', 'Assigned employee should now be emp-B');
+    assertEquals(toolStatuses['tool-1'], 'ISSUED', 'Tools should transition to ISSUED for emp-B');
+  });
+
+  await test('7.2 Toolbox return preserves DAMAGED tools and does not revert them to AVAILABLE', async () => {
+    let preservedStatuses: Record<string, string> = { 'tool-good': 'ISSUED', 'tool-broken': 'DAMAGED' };
+
+    (prisma.toolBox as any).findUnique = async () => ({
+      id: 'box-damaged-test',
+      items: [{ assetId: 'tool-good' }, { assetId: 'tool-broken' }],
+    });
+    (prisma.toolBox as any).update = async () => ({ id: 'box-damaged-test', status: 'UNASSIGNED' });
+    (prisma.asset as any).updateMany = async (args: any) => {
+      const notIn = args.where.status?.notIn || [];
+      for (const id of args.where.id.in) {
+        if (!notIn.includes(preservedStatuses[id])) {
+          preservedStatuses[id] = args.data.status;
+        }
+      }
+    };
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 2 });
+
+    const res = await apiRequest('POST', '/toolboxes/return', {
+      boxId: 'box-damaged-test',
+    });
+
+    assertEquals(res.status, 200, 'Return should succeed');
+    assertEquals(preservedStatuses['tool-good'], 'AVAILABLE', 'Good tool should revert to AVAILABLE');
+    assertEquals(preservedStatuses['tool-broken'], 'DAMAGED', 'Damaged tool must REMAIN DAMAGED');
+  });
+
+  await test('7.3 Issuing a toolbox containing a DAMAGED or IN_SERVICE tool is defensively blocked with 400', async () => {
+    (prisma.toolBox as any).findUnique = async () => ({
+      id: 'box-with-damaged',
+      items: [
+        { assetId: 'tool-ok', asset: { name: 'Good Pliers', assetNumber: 'PL-01', status: 'AVAILABLE' } },
+        { assetId: 'tool-dmg', asset: { name: 'Broken Screwdriver', assetNumber: 'SD-09', status: 'DAMAGED' } },
+      ],
+    });
+
+    const res = await apiRequest('POST', '/toolboxes/issue', {
+      boxId: 'box-with-damaged',
+      employeeId: 'emp-C',
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request for toolbox with damaged item');
+    assert(
+      res.data.error && res.data.error.includes('in this toolbox has status DAMAGED and the toolbox cannot be issued'),
+      `Expected error message, got: ${res.data.error}`
+    );
+  });
+
   // Close server
   server.close();
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
 import { useLanguageStore } from '../../store/useLanguageStore';
@@ -22,16 +22,15 @@ export const ToolIssuingModule: React.FC = () => {
 
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
-  const [selectedAssetForReturn, setSelectedAssetForReturn] = useState<string>('');
 
+  // Form States
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
-  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
-  const [expectedReturnDate, setExpectedReturnDate] = useState<string>(
-    new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().slice(0, 10)
-  );
+  const [expectedReturnDate, setExpectedReturnDate] = useState<string>('');
   const [checkoutNotes, setCheckoutNotes] = useState<string>('');
 
+  const [selectedAssetForReturn, setSelectedAssetForReturn] = useState<string>('');
   const [returnCondition, setReturnCondition] = useState<string>('GOOD');
   const [returnNotes, setReturnNotes] = useState<string>('');
 
@@ -39,11 +38,26 @@ export const ToolIssuingModule: React.FC = () => {
   const [isIssueBoxModalOpen, setIsIssueBoxModalOpen] = useState(false);
   const [selectedToolBoxId, setSelectedToolBoxId] = useState<string>('');
 
-  const toolBoxAssetIds = new Set(toolBoxes.flatMap((b) => b.items.map((i) => i.id)));
-  const availableAssets = assets.filter((a) => a.status === 'AVAILABLE' && !toolBoxAssetIds.has(a.id));
-  const issuedAssets = assets.filter((a) => a.status === 'ISSUED');
-  const availableToolBoxes = toolBoxes.filter((b) => b.status === 'UNASSIGNED');
-  const assignedToolBoxes = toolBoxes.filter((b) => b.status === 'ASSIGNED');
+  const nonIssuableStatuses = useMemo(() => new Set(['LOST', 'MISSING', 'DAMAGED', 'IN_SERVICE', 'IN_CALIBRATION', 'RETIRED']), []);
+  const toolBoxAssetIds = useMemo(() => new Set(toolBoxes.flatMap((b) => b.items.map((i) => i.id))), [toolBoxes]);
+
+  const availableAssets = useMemo(() => assets.filter((a) => {
+    const statusUpper = (a.status || '').toUpperCase();
+    return statusUpper === 'AVAILABLE' && !nonIssuableStatuses.has(statusUpper) && !toolBoxAssetIds.has(a.id);
+  }), [assets, nonIssuableStatuses, toolBoxAssetIds]);
+
+  const issuedAssets = useMemo(() => assets.filter((a) => a.status === 'ISSUED'), [assets]);
+
+  const availableToolBoxes = useMemo(() => toolBoxes.filter((b) => {
+    if (b.status !== 'UNASSIGNED') return false;
+    const hasRestrictedTool = b.items.some((item: any) => {
+      const statusUpper = ((item.asset?.status || item.status) || '').toUpperCase();
+      return nonIssuableStatuses.has(statusUpper);
+    });
+    return !hasRestrictedTool;
+  }), [toolBoxes, nonIssuableStatuses]);
+
+  const assignedToolBoxes = useMemo(() => toolBoxes.filter((b) => b.status === 'ASSIGNED'), [toolBoxes]);
 
   const toggleAssetSelection = (id: string) => {
     setSelectedAssetIds((prev) =>
@@ -149,6 +163,18 @@ export const ToolIssuingModule: React.FC = () => {
 
           <button
             onClick={() => {
+              if (availableToolBoxes.length > 0) setSelectedToolBoxId(availableToolBoxes[0].id);
+              if (employees.length > 0) setSelectedEmployeeId(employees[0].id);
+              setIsIssueBoxModalOpen(true);
+            }}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Box className="w-4 h-4" />
+            <span>{t('Issue Tool Box')}</span>
+          </button>
+
+          <button
+            onClick={() => {
               if (issuedAssets.length > 0) setSelectedAssetForReturn(issuedAssets[0].id);
               setIsReturnModalOpen(true);
             }}
@@ -160,65 +186,138 @@ export const ToolIssuingModule: React.FC = () => {
         </div>
       </div>
 
-      {/* Active Tool Box Kits Section */}
-      <div className="glass-panel p-5 space-y-4">
-        <h3 className="font-bold text-sm text-slate-800 flex items-center justify-between">
-          <span className="flex items-center gap-2">
+      {/* Tool Box Kits Section (Available in Warehouse & Active in Field) */}
+      <div className="glass-panel p-5 space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
             <Box className="w-4 h-4 text-purple-600" />
-            <span>{t('Active Tool Box Kits Checked Out in Field')} ({assignedToolBoxes.length})</span>
+            <span>{t('Tool Box & Kit Inventory Status')}</span>
+          </h3>
+          <span className="text-xs text-slate-500 font-medium">
+            {availableToolBoxes.length} {t('in warehouse')} • {assignedToolBoxes.length} {t('assigned in field')}
           </span>
-          <span className="text-xs font-normal text-slate-400">{t('Assigned kit custody loans')}</span>
-        </h3>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {assignedToolBoxes.length === 0 ? (
-            <p className="col-span-full py-4 text-center text-xs text-slate-400">
-              {t('No tool box kits are currently assigned in the field.')}
+        {/* 1. Available Tool Boxes in Warehouse Ready for Issue */}
+        <div className="space-y-3">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+            <span>{t('Available Tool Box Kits in Warehouse')} ({availableToolBoxes.length})</span>
+          </h4>
+
+          {availableToolBoxes.length === 0 ? (
+            <p className="py-3 text-xs text-slate-400 bg-surface-50 rounded-lg text-center border border-surface-200">
+              {t('No unassigned tool boxes available in warehouse storage.')}
             </p>
           ) : (
-            assignedToolBoxes.map((box) => (
-              <div key={box.id} className="p-4 bg-surface-50 border border-surface-200 rounded-xl space-y-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="font-mono text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200">
-                      {box.boxNumber}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {availableToolBoxes.map((box) => (
+                <div key={box.id} className="p-4 bg-white border border-emerald-200 rounded-xl space-y-3 shadow-xs">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        {box.boxNumber}
+                      </span>
+                      <h4 className="font-bold text-sm text-slate-800 mt-1">{box.name}</h4>
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-500 bg-surface-50 px-1.5 py-0.5 rounded border border-surface-200 flex items-center gap-1">
+                      <QrCode className="w-3 h-3 text-emerald-600" />
+                      {box.qrCode || `QR-${box.boxNumber}`}
                     </span>
-                    <h4 className="font-bold text-sm text-slate-800 mt-1">{box.name}</h4>
                   </div>
-                  <span className="font-mono text-[10px] text-slate-500 bg-white px-1.5 py-0.5 rounded border border-surface-200 flex items-center gap-1">
-                    <QrCode className="w-3 h-3 text-purple-500" />
-                    {box.qrCode || `QR-${box.boxNumber}`}
-                  </span>
-                </div>
 
-                <div className="text-xs text-slate-600 space-y-1">
-                  <p><span className="font-semibold text-slate-700">{t('Technician:')}</span> {box.employeeName || t('Unassigned')}</p>
-                  <p><span className="font-semibold text-slate-700">{t('Contained Tools:')}</span> {box.items.length} {t('items')}</p>
-                </div>
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <p><span className="font-semibold text-slate-700">{t('Status:')}</span> <span className="text-emerald-700 font-bold">{t('AVAILABLE / IN STOCK')}</span></p>
+                    <p><span className="font-semibold text-slate-700">{t('Contained Tools:')}</span> {box.items.length} {t('items')}</p>
+                  </div>
 
-                <div className="flex items-center gap-2 pt-2 border-t border-surface-200">
-                  <button
-                    onClick={() => handleReturnToolBoxAction(box.id)}
-                    className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded transition-all flex items-center justify-center gap-1"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{t('Return Kit')}</span>
-                  </button>
-
-                  {(activeRole === 'ADMIN' || activeRole === 'WAREHOUSE_MANAGER') && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-surface-200">
                     <button
-                      onClick={() => handleDismantleToolBoxAction(box)}
-                      className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-semibold text-xs rounded transition-all flex items-center justify-center gap-1"
-                      title={t('Dismantle Tool Box')}
+                      onClick={() => {
+                        setSelectedToolBoxId(box.id);
+                        if (employees.length > 0) setSelectedEmployeeId(employees[0].id);
+                        setIsIssueBoxModalOpen(true);
+                      }}
+                      className="flex-1 py-1.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs rounded transition-all flex items-center justify-center gap-1 shadow-sm"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>{t('Dismantle')}</span>
+                      <ArrowLeftRight className="w-3.5 h-3.5" />
+                      <span>{t('Issue Kit')}</span>
                     </button>
-                  )}
+
+                    {(activeRole === 'ADMIN' || activeRole === 'WAREHOUSE_MANAGER') && (
+                      <button
+                        onClick={() => handleDismantleToolBoxAction(box)}
+                        className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-semibold text-xs rounded transition-all flex items-center justify-center gap-1"
+                        title={t('Dismantle Tool Box')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{t('Dismantle')}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
+        </div>
+
+        {/* 2. Active Tool Box Kits Checked Out in Field */}
+        <div className="space-y-3 pt-3 border-t border-surface-200">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-purple-700 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-purple-500 inline-block"></span>
+            <span>{t('Active Tool Box Kits Checked Out in Field')} ({assignedToolBoxes.length})</span>
+          </h4>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {assignedToolBoxes.length === 0 ? (
+              <p className="col-span-full py-3 text-center text-xs text-slate-400 bg-surface-50 rounded-lg border border-surface-200">
+                {t('No tool box kits are currently assigned in the field.')}
+              </p>
+            ) : (
+              assignedToolBoxes.map((box) => (
+                <div key={box.id} className="p-4 bg-surface-50 border border-surface-200 rounded-xl space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="font-mono text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200">
+                        {box.boxNumber}
+                      </span>
+                      <h4 className="font-bold text-sm text-slate-800 mt-1">{box.name}</h4>
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-500 bg-white px-1.5 py-0.5 rounded border border-surface-200 flex items-center gap-1">
+                      <QrCode className="w-3 h-3 text-purple-500" />
+                      {box.qrCode || `QR-${box.boxNumber}`}
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <p><span className="font-semibold text-slate-700">{t('Technician:')}</span> {box.employeeName || t('Unassigned')}</p>
+                    <p><span className="font-semibold text-slate-700">{t('Contained Tools:')}</span> {box.items.length} {t('items')}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-surface-200">
+                    <button
+                      onClick={() => handleReturnToolBoxAction(box.id)}
+                      className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded transition-all flex items-center justify-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{t('Return Kit')}</span>
+                    </button>
+
+                    {(activeRole === 'ADMIN' || activeRole === 'WAREHOUSE_MANAGER') && (
+                      <button
+                        onClick={() => handleDismantleToolBoxAction(box)}
+                        className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-semibold text-xs rounded transition-all flex items-center justify-center gap-1"
+                        title={t('Dismantle Tool Box')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{t('Dismantle')}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 
@@ -460,6 +559,88 @@ export const ToolIssuingModule: React.FC = () => {
             </button>
             <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all active:scale-95">
               {t('Process Return')}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Issue Tool Box Kit Modal */}
+      <Modal isOpen={isIssueBoxModalOpen} onClose={() => setIsIssueBoxModalOpen(false)} title={t('Issue Tool Box Kit to Employee')}>
+        <form onSubmit={handleConfirmIssueToolBox} className="space-y-4 text-xs">
+          <div>
+            <label className={labelClass}>{t('Select Tool Box Kit to Issue')}</label>
+            <select
+              value={selectedToolBoxId}
+              onChange={(e) => setSelectedToolBoxId(e.target.value)}
+              className={inputClass}
+              required
+            >
+              <option value="">{t('Choose a tool box kit...')}</option>
+              {availableToolBoxes.map((box) => (
+                <option key={box.id} value={box.id}>
+                  {box.name} ({box.boxNumber}) — {box.items.length} {t('tools')}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('Select Employee Recipient')}</label>
+            <select
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+              className={inputClass}
+              required
+            >
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.firstName} {e.lastName} ({e.employeeNumber}) - {e.department}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('Assign to Project (Optional)')}</label>
+            <select
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">{t('No Specific Project (General Field Assignment)')}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.projectCode} - {p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('Expected Return Date')}</label>
+            <input
+              type="date"
+              value={expectedReturnDate}
+              onChange={(e) => setExpectedReturnDate(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('Issuing Notes / Included Accessories')}</label>
+            <textarea
+              rows={2}
+              placeholder={t("e.g. Field inspection toolkit with all accessories verified.")}
+              value={checkoutNotes}
+              onChange={(e) => setCheckoutNotes(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
+            <button type="button" onClick={() => setIsIssueBoxModalOpen(false)} className="btn-ghost">
+              {t('Cancel')}
+            </button>
+            <button type="submit" className="btn-primary">
+              {t('Confirm Tool Box Issue')}
             </button>
           </div>
         </form>

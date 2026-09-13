@@ -106,12 +106,12 @@
   }
   #printable-qr-container, #printable-qr-container *,
   #printable-document, #printable-document *,
+  #printable-report, #printable-report *,
   .printable-area, .printable-area * {
     visibility: visible;
   }
   #printable-qr-container,
-  #printable-document,
-  .printable-area {
+  #printable-document {
     position: absolute;
     left: 0;
     top: 0;
@@ -122,12 +122,34 @@
     margin: 0 !important;
   }
 
-  .no-print {
+  #printable-report,
+  .printable-area {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  .no-print,
+  .no-print * {
     display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Ensure main viewport doesn't clip multi-page tables */
+  body, html, #root, main {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+    background: white !important;
   }
 
   @page {
     size: A4 portrait;
-    margin: 12mm;
+    margin: 10mm;
   }
 }
