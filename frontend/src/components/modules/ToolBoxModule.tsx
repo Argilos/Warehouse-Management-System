@@ -29,6 +29,23 @@ export const ToolBoxModule: React.FC = () => {
   const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
   const [inventoryToolBox, setInventoryToolBox] = useState<ToolBox | null>(null);
 
+  // Set of asset IDs currently inside an active (non-dismantled) toolbox
+  const activeToolBoxes = toolBoxes.filter((tb) => (tb as any).status !== 'DISMANTLED');
+  const alreadyCratedAssetIds = new Set(
+    activeToolBoxes.flatMap((tb) => tb.items.map((i: any) => i.assetId || i.id))
+  );
+
+  // Tools eligible for packing into a crate/kit:
+  // Exclude LOST, MISSING, DAMAGED, and RETIRED tools, as well as tools already inside an active crate.
+  const packableAssets = assets.filter((ast) => {
+    const isExcludedStatus =
+      ast.status === 'LOST' ||
+      ast.status === 'MISSING' ||
+      ast.status === 'DAMAGED' ||
+      ast.status === 'RETIRED';
+    return !isExcludedStatus && !alreadyCratedAssetIds.has(ast.id);
+  });
+
   const handleOpenInventory = (box: ToolBox) => {
     setInventoryToolBox(box);
     setInventoryModalOpen(true);
@@ -298,23 +315,34 @@ export const ToolBoxModule: React.FC = () => {
           <div>
             <label className={labelClass}>{t('Select Component Tools to Pack into Kit')} ({selectedAssetIds.length} {t('packed')})</label>
             <div className="max-h-48 overflow-y-auto bg-surface-50 border border-surface-200 rounded-lg p-2 space-y-1">
-              {assets.map((ast) => {
-                const isPacked = selectedAssetIds.includes(ast.id);
-                return (
-                  <div
-                    key={ast.id}
-                    onClick={() => handleToggleAsset(ast.id)}
-                    className={`p-2 rounded cursor-pointer flex items-center justify-between border transition-all ${isPacked ? 'bg-brand-50 border-brand-300 text-brand-900' : 'bg-white border-surface-200 text-slate-700 hover:bg-surface-100'
-                      }`}
-                  >
-                    <div>
-                      <span className="font-semibold">{ast.name}</span>
-                      <span className="font-mono text-[10px] text-slate-400 block">{ast.assetNumber}</span>
+              {packableAssets.length === 0 ? (
+                <div className="p-4 text-center text-slate-400 text-xs">
+                  {t('No eligible tools available to pack (tools marked LOST, DAMAGED, RETIRED, or already in another kit are excluded).')}
+                </div>
+              ) : (
+                packableAssets.map((ast) => {
+                  const isPacked = selectedAssetIds.includes(ast.id);
+                  return (
+                    <div
+                      key={ast.id}
+                      onClick={() => handleToggleAsset(ast.id)}
+                      className={`p-2 rounded cursor-pointer flex items-center justify-between border transition-all ${isPacked ? 'bg-brand-50 border-brand-300 text-brand-900' : 'bg-white border-surface-200 text-slate-700 hover:bg-surface-100'
+                        }`}
+                    >
+                      <div>
+                        <span className="font-semibold">{ast.name}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="font-mono text-[10px] text-slate-400">{ast.assetNumber}</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${ast.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                            {t(ast.status)}
+                          </span>
+                        </div>
+                      </div>
+                      <input type="checkbox" checked={isPacked} readOnly className="text-brand-600 rounded" />
                     </div>
-                    <input type="checkbox" checked={isPacked} readOnly className="text-brand-600 rounded" />
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
 

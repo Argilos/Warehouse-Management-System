@@ -20,8 +20,12 @@ export const MaintenanceModule: React.FC = () => {
   const [repairCost, setRepairCost] = useState<number>(100);
   const [replacedParts, setReplacedParts] = useState<string>('Standard seal replacement');
 
+  const serviceableAssets = assets.filter(
+    (a) => a.status !== 'LOST' && a.status !== 'MISSING' && a.status !== 'RETIRED'
+  );
+
   const handleOpenCreateModal = () => {
-    if (assets.length > 0) setSelectedAssetId(assets[0].id);
+    if (serviceableAssets.length > 0) setSelectedAssetId(serviceableAssets[0].id);
     if (suppliers.length > 0) setSelectedSupplierId(suppliers[0].id);
     setProblemDescription('');
     setIsModalOpen(true);
@@ -145,7 +149,7 @@ export const MaintenanceModule: React.FC = () => {
               onChange={(e) => setSelectedAssetId(e.target.value)}
               className={inputClass}
             >
-              {assets.map((a) => (
+              {serviceableAssets.map((a) => (
                 <option key={a.id} value={a.id}>{a.name} ({a.assetNumber}) - {t(a.status)}</option>
               ))}
             </select>

@@ -280,10 +280,54 @@ async function runTests() {
     );
   });
 
+  await test('2.4 Adding a DAMAGED or RETIRED tool to a crate is blocked with 400', async () => {
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-dmg-1',
+        name: 'Broken Grinder',
+        assetNumber: 'GR-99',
+        status: 'DAMAGED',
+      },
+    ];
+
+    const res = await apiRequest('POST', '/toolboxes', {
+      name: 'Heavy Crate',
+      assetIds: ['asset-dmg-1'],
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request');
+    assert(
+      res.data.error && res.data.error.includes('has status DAMAGED and cannot be added to a kit/crate'),
+      `Expected DAMAGED crate rejection error, got: ${res.data.error}`
+    );
+  });
+
+  await test('2.5 Adding tools to existing crate via POST /toolboxes/:id/items defensively rejects DAMAGED/RETIRED', async () => {
+    (prisma.toolBox as any).findUnique = async () => ({ id: 'box-existing', status: 'ACTIVE' });
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-ret-1',
+        name: 'Decommissioned Drill',
+        assetNumber: 'DR-00',
+        status: 'RETIRED',
+      },
+    ];
+
+    const res = await apiRequest('POST', '/toolboxes/box-existing/items', {
+      assetIds: ['asset-ret-1'],
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request');
+    assert(
+      res.data.error && res.data.error.includes('has status RETIRED and cannot be added to a kit/crate'),
+      `Expected RETIRED crate item rejection, got: ${res.data.error}`
+    );
+  });
+
   // --------------------------------------------------------------------------
-  // RULE 3: "LOST" STATUS (TERMINAL STATE ENFORCEMENT)
+  // RULE 3: "LOST", "DAMAGED" & TERMINAL STATUS ENFORCEMENT
   // --------------------------------------------------------------------------
-  console.log('\nTest Suite 3: "LOST" Status Terminal State Enforcement');
+  console.log('\nTest Suite 3: Terminal & Defective Status Defensive Validation');
 
   await test('3.1 Modifying or reactivating a LOST asset is blocked with 400', async () => {
     (prisma.asset as any).findUnique = async () => ({
@@ -321,8 +365,30 @@ async function runTests() {
 
     assertEquals(res.status, 400, 'Expected 400 Bad Request');
     assert(
-      res.data.error && res.data.error.includes('marked as LOST (terminal state) and cannot be issued'),
+      res.data.error && res.data.error.includes('has status LOST and cannot be issued'),
       `Expected error for lost asset, got: ${res.data.error}`
+    );
+  });
+
+  await test('3.2b Issuing a DAMAGED tool is blocked with 400', async () => {
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-dmg-2',
+        name: 'Shattered Drill',
+        assetNumber: 'SD-01',
+        status: 'DAMAGED',
+      },
+    ];
+
+    const res = await apiRequest('POST', '/transactions/issue', {
+      assetIds: ['asset-dmg-2'],
+      employeeId: 'emp-1',
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request');
+    assert(
+      res.data.error && res.data.error.includes('has status DAMAGED and cannot be issued'),
+      `Expected error for damaged tool, got: ${res.data.error}`
     );
   });
 
@@ -343,12 +409,12 @@ async function runTests() {
 
     assertEquals(res.status, 400, 'Expected 400 Bad Request');
     assert(
-      res.data.error && res.data.error.includes('marked as LOST (terminal state) and cannot be added to a crate'),
+      res.data.error && res.data.error.includes('has status LOST and cannot be added to a kit/crate'),
       `Expected error about lost asset in crate, got: ${res.data.error}`
     );
   });
 
-  await test('3.4 Creating a service order for a LOST asset is blocked with 400', async () => {
+  await test('3.4 Creating a service order for a LOST or RETIRED asset is blocked with 400', async () => {
     (prisma.asset as any).findUnique = async () => ({
       id: 'asset-lost-4',
       name: 'Jackhammer',
@@ -364,12 +430,35 @@ async function runTests() {
 
     assertEquals(res.status, 400, 'Expected 400 Bad Request');
     assert(
-      res.data.error && res.data.error.includes('marked as LOST (terminal state) and cannot be sent to maintenance/service'),
+      res.data.error && res.data.error.includes('has status LOST and cannot be sent to maintenance/service'),
       `Expected error for lost service order, got: ${res.data.error}`
     );
   });
 
-  await test('3.5 Creating a maintenance task for a LOST asset is blocked with 400', async () => {
+  await test('3.4b Service orders PERMIT DAMAGED tools for repair and restore them', async () => {
+    (prisma.asset as any).findUnique = async () => ({
+      id: 'asset-dmg-3',
+      name: 'Damaged Hydraulic Pump',
+      assetNumber: 'HP-01',
+      status: 'DAMAGED',
+    });
+    (prisma.asset as any).update = async () => ({ id: 'asset-dmg-3', status: 'IN_SERVICE' });
+    (prisma.serviceOrder as any).create = async (args: any) => ({
+      id: 'so-1',
+      ...args.data,
+      asset: { name: 'Damaged Hydraulic Pump', assetNumber: 'HP-01' },
+    });
+
+    const res = await apiRequest('POST', '/service-orders', {
+      assetId: 'asset-dmg-3',
+      problemDescription: 'High pressure seal failure',
+      priority: 'CRITICAL',
+    });
+
+    assertEquals(res.status, 201, 'Expected 201 Created for repairing damaged equipment');
+  });
+
+  await test('3.5 Creating a maintenance task for a LOST or DAMAGED asset is blocked with 400', async () => {
     (prisma.asset as any).findUnique = async () => ({
       id: 'asset-lost-5',
       name: 'Welder',
@@ -385,8 +474,27 @@ async function runTests() {
 
     assertEquals(res.status, 400, 'Expected 400 Bad Request');
     assert(
-      res.data.error && res.data.error.includes('marked as LOST (terminal state)'),
+      res.data.error && res.data.error.includes('has status LOST and cannot be assigned maintenance tasks'),
       `Expected error for lost maintenance task, got: ${res.data.error}`
+    );
+  });
+
+  await test('3.6 Sending a DAMAGED measuring tool to calibration lab is blocked with 400', async () => {
+    (prisma.asset as any).findUnique = async () => ({
+      id: 'asset-dmg-cal',
+      name: 'Cracked Digital Caliper',
+      assetNumber: 'CAL-09',
+      status: 'DAMAGED',
+    });
+
+    const res = await apiRequest('POST', '/calibrations/send-to-lab', {
+      assetId: 'asset-dmg-cal',
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request');
+    assert(
+      res.data.error && res.data.error.includes('has status DAMAGED and cannot be sent to calibration lab'),
+      `Expected error for damaged calibration, got: ${res.data.error}`
     );
   });
 

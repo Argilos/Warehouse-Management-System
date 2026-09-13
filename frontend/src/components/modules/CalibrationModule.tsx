@@ -29,17 +29,22 @@ export const CalibrationModule: React.FC = () => {
   }, []);
 
   const measuringAssets = assets.filter(
-    (a) => a.category === 'Measuring Devices' ||
-      a.status === 'IN_CALIBRATION' ||
-      a.name.toLowerCase().includes('multimeter') ||
-      a.name.toLowerCase().includes('laser') ||
-      a.name.toLowerCase().includes('micrometer')
+    (a) =>
+      a.status !== 'LOST' &&
+      a.status !== 'MISSING' &&
+      a.status !== 'DAMAGED' &&
+      a.status !== 'RETIRED' &&
+      (a.category === 'Measuring Devices' ||
+        a.status === 'IN_CALIBRATION' ||
+        a.name.toLowerCase().includes('multimeter') ||
+        a.name.toLowerCase().includes('laser') ||
+        a.name.toLowerCase().includes('micrometer'))
   );
 
   const handleOpenSubmitModal = (preselectedId?: string, certNo?: string) => {
     const randCert = certNo || `CERT-FLK-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     setCertificateNumber(randCert);
-    const targetId = preselectedId || (assets.length > 0 ? assets[0].id : '');
+    const targetId = preselectedId || (measuringAssets.length > 0 ? measuringAssets[0].id : '');
     setSelectedAssetId(targetId);
     if (suppliers.length > 0) setProviderId(suppliers[0].id);
     setNotes('');

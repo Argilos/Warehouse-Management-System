@@ -715,15 +715,15 @@ router.post('/transactions/issue', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No assets specified for issuance' });
     }
 
-    // 1. Guard against LOST status
+    // 1. Guard against non-issuable status (LOST, MISSING, DAMAGED, RETIRED)
     const targetAssets = await prisma.asset.findMany({
       where: { id: { in: targetIds } },
     });
 
     for (const ast of targetAssets) {
-      if (ast.status === 'LOST') {
+      if (ast.status === 'LOST' || ast.status === 'DAMAGED' || ast.status === 'RETIRED' || (ast as any).status === 'MISSING') {
         return res.status(400).json({
-          error: `Tool "${ast.name}" (${ast.assetNumber}) is marked as LOST (terminal state) and cannot be issued.`
+          error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be issued.`
         });
       }
     }
@@ -1008,15 +1008,15 @@ router.post('/toolboxes', async (req: Request, res: Response) => {
 
     const ids = (assetIds || []) as string[];
     if (ids.length > 0) {
-      // 1. Validate that no tool is marked LOST
+      // 1. Validate that no tool is marked LOST, MISSING, DAMAGED, or RETIRED
       const selectedAssets = await prisma.asset.findMany({
         where: { id: { in: ids } },
       });
 
       for (const ast of selectedAssets) {
-        if (ast.status === 'LOST') {
+        if (ast.status === 'LOST' || ast.status === 'DAMAGED' || ast.status === 'RETIRED' || (ast as any).status === 'MISSING') {
           return res.status(400).json({
-            error: `Tool "${ast.name}" (${ast.assetNumber}) is marked as LOST (terminal state) and cannot be added to a crate.`
+            error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be added to a kit/crate.`
           });
         }
       }
@@ -1054,6 +1054,60 @@ router.post('/toolboxes', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error creating toolbox:', error);
     res.status(500).json({ error: error.message || 'Failed to create toolbox' });
+  }
+});
+
+router.post('/toolboxes/:id/items', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { assetIds } = req.body;
+
+    const box = await prisma.toolBox.findUnique({ where: { id } });
+    if (!box) return res.status(404).json({ error: 'ToolBox not found' });
+
+    const ids = (assetIds || []) as string[];
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'No tools specified to add to toolbox' });
+    }
+
+    const selectedAssets = await prisma.asset.findMany({
+      where: { id: { in: ids } },
+    });
+
+    for (const ast of selectedAssets) {
+      if (ast.status === 'LOST' || ast.status === 'DAMAGED' || ast.status === 'RETIRED' || (ast as any).status === 'MISSING') {
+        return res.status(400).json({
+          error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be added to a kit/crate.`
+        });
+      }
+    }
+
+    const existingInCrate = await prisma.toolBoxItem.findFirst({
+      where: { assetId: { in: ids } },
+      include: { toolBox: true, asset: true },
+    });
+
+    if (existingInCrate) {
+      const toolName = existingInCrate.asset?.name || 'Tool';
+      const boxName = existingInCrate.toolBox?.name || 'Crate';
+      return res.status(400).json({
+        error: `Tool "${toolName}" is already packed inside crate "${boxName}". It cannot be added to another crate.`
+      });
+    }
+
+    await prisma.toolBoxItem.createMany({
+      data: ids.map((astId: string) => ({ toolBoxId: id, assetId: astId })),
+    });
+
+    const updatedBox = await prisma.toolBox.findUnique({
+      where: { id },
+      include: { employee: true, items: { include: { asset: true } } },
+    });
+
+    res.status(200).json(updatedBox);
+  } catch (error: any) {
+    console.error('Error adding items to toolbox:', error);
+    res.status(500).json({ error: error.message || 'Failed to add items to toolbox' });
   }
 });
 
@@ -1206,9 +1260,11 @@ router.post('/service-orders', async (req: Request, res: Response) => {
 
     const existingAsset = await prisma.asset.findUnique({ where: { id: assetId } });
     if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
-    if (existingAsset.status === 'LOST') {
+    // Note: DAMAGED tools legitimately enter service orders for repair and restoration.
+    // Terminal and decommissioned tools (LOST, MISSING, RETIRED) cannot enter service.
+    if (existingAsset.status === 'LOST' || existingAsset.status === 'RETIRED' || (existingAsset as any).status === 'MISSING') {
       return res.status(400).json({
-        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be sent to maintenance/service.`
+        error: `Tool "${existingAsset.name}" has status ${existingAsset.status} and cannot be sent to maintenance/service.`
       });
     }
 
@@ -1299,9 +1355,9 @@ router.post('/calibrations/send-to-lab', async (req: Request, res: Response) => 
 
     const existingAsset = await prisma.asset.findUnique({ where: { id: assetId } });
     if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
-    if (existingAsset.status === 'LOST') {
+    if (existingAsset.status === 'LOST' || existingAsset.status === 'DAMAGED' || existingAsset.status === 'RETIRED' || (existingAsset as any).status === 'MISSING') {
       return res.status(400).json({
-        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be sent to calibration lab.`
+        error: `Tool "${existingAsset.name}" has status ${existingAsset.status} and cannot be sent to calibration lab.`
       });
     }
 
@@ -1321,9 +1377,9 @@ router.post('/calibrations', async (req: Request, res: Response) => {
 
     const existingAsset = await prisma.asset.findUnique({ where: { id: body.assetId } });
     if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
-    if (existingAsset.status === 'LOST') {
+    if (existingAsset.status === 'LOST' || existingAsset.status === 'DAMAGED' || existingAsset.status === 'RETIRED' || (existingAsset as any).status === 'MISSING') {
       return res.status(400).json({
-        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be calibrated.`
+        error: `Tool "${existingAsset.name}" has status ${existingAsset.status} and cannot be calibrated.`
       });
     }
 
@@ -1603,9 +1659,9 @@ router.post('/maintenance-plans', async (req: Request, res: Response) => {
 
     const existingAsset = await prisma.asset.findUnique({ where: { id: body.assetId } });
     if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
-    if (existingAsset.status === 'LOST') {
+    if (existingAsset.status === 'LOST' || existingAsset.status === 'DAMAGED' || existingAsset.status === 'RETIRED' || (existingAsset as any).status === 'MISSING') {
       return res.status(400).json({
-        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be assigned a maintenance plan.`
+        error: `Tool "${existingAsset.name}" has status ${existingAsset.status} and cannot be assigned a maintenance plan.`
       });
     }
 
@@ -1738,9 +1794,9 @@ router.post('/maintenance-tasks', async (req: Request, res: Response) => {
 
     const existingAsset = await prisma.asset.findUnique({ where: { id: body.assetId } });
     if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
-    if (existingAsset.status === 'LOST') {
+    if (existingAsset.status === 'LOST' || existingAsset.status === 'DAMAGED' || existingAsset.status === 'RETIRED' || (existingAsset as any).status === 'MISSING') {
       return res.status(400).json({
-        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be assigned maintenance tasks.`
+        error: `Tool "${existingAsset.name}" has status ${existingAsset.status} and cannot be assigned maintenance tasks.`
       });
     }
 
@@ -1779,9 +1835,9 @@ router.put('/maintenance-tasks/:id/start', async (req: Request, res: Response) =
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    if (task.asset.status === 'LOST') {
+    if (task.asset.status === 'LOST' || task.asset.status === 'DAMAGED' || task.asset.status === 'RETIRED' || (task.asset as any).status === 'MISSING') {
       return res.status(400).json({
-        error: `Tool "${task.asset.name}" is marked as LOST (terminal state) and cannot be serviced.`
+        error: `Tool "${task.asset.name}" has status ${task.asset.status} and cannot be serviced.`
       });
     }
 

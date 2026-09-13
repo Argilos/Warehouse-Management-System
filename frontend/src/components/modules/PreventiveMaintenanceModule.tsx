@@ -88,6 +88,10 @@ export const PreventiveMaintenanceModule: React.FC<PreventiveMaintenanceModulePr
     overrideReason: '',
   });
 
+  const maintainableAssets = assets.filter(
+    (a) => a.status !== 'LOST' && a.status !== 'MISSING' && a.status !== 'DAMAGED' && a.status !== 'RETIRED'
+  );
+
   const now = new Date();
 
   // Helper to calculate days remaining & operational status
@@ -897,9 +901,10 @@ export const PreventiveMaintenanceModule: React.FC<PreventiveMaintenanceModulePr
                     required
                     className="w-full p-2 bg-surface-50 border border-surface-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    {assets.map((a) => (
+                    <option value="">{t('Choose Equipment...')}</option>
+                    {maintainableAssets.map((a) => (
                       <option key={a.id} value={a.id}>
-                        {a.name} ({a.assetNumber}) - {a.category}
+                        {a.name} ({a.assetNumber}) - {a.category} ({t(a.status)})
                       </option>
                     ))}
                   </select>
