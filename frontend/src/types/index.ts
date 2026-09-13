@@ -323,6 +323,7 @@ export interface OtpremnicaDocument {
     assetName: string;
     serialNumber: string;
     category: string;
+    status?: string;
     quantity: number;
     notes?: string;
   }[];

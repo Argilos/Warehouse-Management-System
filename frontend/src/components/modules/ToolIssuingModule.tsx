@@ -62,16 +62,23 @@ export const ToolIssuingModule: React.FC = () => {
     const projId = selectedProjectId;
     const notes = checkoutNotes;
 
-    await issueAssets(selectedAssetIds, empId, projId || undefined, expectedReturnDate, notes);
-    setIsIssueModalOpen(false);
-    setSelectedAssetIds([]);
-    setCheckoutNotes('');
+    try {
+      const createdTrxs = await issueAssets(selectedAssetIds, empId, projId || undefined, expectedReturnDate, notes);
+      setIsIssueModalOpen(false);
+      setSelectedAssetIds([]);
+      setCheckoutNotes('');
 
-    // Generate Otpremnica Handover Document
-    const doc = await generateOtpremnica(empId, projId || undefined, undefined, notes);
-    if (doc) {
-      setCurrentOtpremnica(doc);
-      setOtpremnicaModalOpen(true);
+      // Forward created transaction IDs directly to the delivery note generator
+      const trxIds = Array.isArray(createdTrxs) ? createdTrxs.map((t: any) => t.id) : undefined;
+
+      // Generate Otpremnica Handover Document
+      const doc = await generateOtpremnica(empId, projId || undefined, trxIds, notes);
+      if (doc) {
+        setCurrentOtpremnica(doc);
+        setOtpremnicaModalOpen(true);
+      }
+    } catch (err: any) {
+      alert(err.message || t('Failed to issue equipment'));
     }
   };
 

@@ -217,12 +217,13 @@ export const exportOtpremnicaPDF = (otpremnica: OtpremnicaDocument) => {
 
   // Items Table
   const items = otpremnica.items || [];
-  const tableHeaders = [tr('Asset Code'), tr('Asset Name'), tr('QR / Serial'), tr('Category'), tr('Quantity')];
+  const tableHeaders = [tr('Asset Code'), tr('Asset Name'), tr('QR / Serial'), tr('Category'), tr('Status'), tr('Quantity')];
   const tableBody = items.map(item => [
     item.assetNumber,
     item.assetName,
     item.serialNumber || 'N/A',
     tr(item.category),
+    item.status || 'ISSUED',
     item.quantity || 1,
   ]);
 

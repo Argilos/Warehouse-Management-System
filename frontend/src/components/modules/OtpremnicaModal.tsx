@@ -121,13 +121,14 @@ export const OtpremnicaModal: React.FC<OtpremnicaModalProps> = ({
                   <th className="px-3 py-2 border-r border-slate-200">{t('Name')}</th>
                   <th className="px-3 py-2 border-r border-slate-200">{t('Serial Number')}</th>
                   <th className="px-3 py-2 border-r border-slate-200">{t('Category')}</th>
+                  <th className="px-3 py-2 border-r border-slate-200">{t('Status')}</th>
                   <th className="px-3 py-2 text-right">{t('Quantity')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-4 text-slate-400">
+                    <td colSpan={6} className="text-center py-4 text-slate-400">
                       {t('No items listed on this handover receipt')}
                     </td>
                   </tr>
@@ -138,6 +139,11 @@ export const OtpremnicaModal: React.FC<OtpremnicaModalProps> = ({
                       <td className="px-3 py-2 font-semibold text-slate-800 border-r border-slate-200">{item.assetName}</td>
                       <td className="px-3 py-2 font-mono text-slate-600 border-r border-slate-200">{item.serialNumber || '—'}</td>
                       <td className="px-3 py-2 text-slate-600 border-r border-slate-200">{item.category}</td>
+                      <td className="px-3 py-2 border-r border-slate-200">
+                        <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          {item.status || 'ISSUED'}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-right font-bold text-slate-800">{item.quantity || 1}</td>
                     </tr>
                   ))

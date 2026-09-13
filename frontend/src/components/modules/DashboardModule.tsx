@@ -33,7 +33,9 @@ export const DashboardModule: React.FC = () => {
   // Deduct missing/lost tools from Total Fleet Assets count & valuation
   const activeFleetAssets = assets.filter(a => a.status !== 'MISSING' && a.status !== 'LOST');
   const totalAssetsCount = activeFleetAssets.length;
-  const missingCount = assets.filter(a => a.status === 'MISSING' || a.status === 'LOST').length;
+  const lostFleetAssets = assets.filter(a => a.status === 'MISSING' || a.status === 'LOST');
+  const missingCount = lostFleetAssets.length;
+  const totalLostBookValue = lostFleetAssets.reduce((sum, a) => sum + (a.currentValue ?? a.purchasePrice ?? 0), 0);
 
   const availableCount = assets.filter(a => a.status === 'AVAILABLE').length;
   const issuedCount = assets.filter(a => a.status === 'ISSUED').length;
@@ -52,7 +54,7 @@ export const DashboardModule: React.FC = () => {
     { name: t('IN CALIBRATION'), value: calibrationCount, color: '#8b5cf6' },
     { name: t('RETIRED'), value: retiredCount, color: '#94a3b8' },
     { name: t('DAMAGED'), value: damagedCount, color: '#ef4444' },
-    { name: t('MISSING'), value: missingCount, color: '#f43f5e' },
+    { name: t('LOST / MISSING'), value: missingCount, color: '#f43f5e' },
   ].filter(d => d.value > 0);
 
   const categoriesMap: Record<string, number> = {};
@@ -106,13 +108,13 @@ export const DashboardModule: React.FC = () => {
       </div>
 
       {/* Metric KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           title={t('Total Fleet Assets')}
           value={totalAssetsCount}
           subtitle={
             missingCount > 0
-              ? `${t('Acquisition:')} ${formatCurrency(totalOriginalValue)} (${missingCount} ${t('missing deducted')})`
+              ? `${t('Acquisition:')} ${formatCurrency(totalOriginalValue)} (${missingCount} ${t('lost deducted')})`
               : `${t('Acquisition:')} ${formatCurrency(totalOriginalValue)}`
           }
           icon={<PackageCheck className="w-5 h-5" />}
@@ -133,11 +135,18 @@ export const DashboardModule: React.FC = () => {
           accentColor="from-cyan-500 to-blue-500"
         />
         <StatCard
-          title={t('Fleet Book Value')}
+          title={t('Active Fleet Value')}
           value={formatCurrency(totalCurrentValue)}
           subtitle={`${t('Depreciation:')} ${formatCurrency(totalOriginalValue - totalCurrentValue)}`}
           icon={<DollarSign className="w-5 h-5" />}
           accentColor="from-amber-500 to-orange-500"
+        />
+        <StatCard
+          title={t('Lost Fleet Value')}
+          value={formatCurrency(totalLostBookValue)}
+          subtitle={`${missingCount} ${t('written off / lost')}`}
+          icon={<ShieldAlert className="w-5 h-5" />}
+          accentColor="from-rose-500 to-red-600"
         />
       </div>
 

@@ -99,6 +99,22 @@ export const ReportsModule: React.FC = () => {
     return true;
   };
 
+  // Map of employeeId -> Set of assetIds/assetNumbers from transaction history
+  const employeeAssetMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    transactions.forEach((t) => {
+      if (t.employeeId) {
+        if (!map.has(t.employeeId)) {
+          map.set(t.employeeId, new Set<string>());
+        }
+        const set = map.get(t.employeeId)!;
+        if (t.assetId) set.add(t.assetId);
+        if (t.assetNumber) set.add(t.assetNumber);
+      }
+    });
+    return map;
+  }, [transactions]);
+
   // Filtered Assets Computation
   const filteredAssets = useMemo(() => {
     return assets.filter(a => {
@@ -112,7 +128,17 @@ export const ReportsModule: React.FC = () => {
 
       const matchesCat = selectedCategory === 'ALL' || a.category === selectedCategory;
       const matchesStat = selectedStatus === 'ALL' || a.status === selectedStatus;
-      const matchesEmp = selectedEmployeeId === 'ALL' || a.holderEmployeeId === selectedEmployeeId;
+
+      let matchesEmp = true;
+      if (selectedEmployeeId !== 'ALL') {
+        const empAssets = employeeAssetMap.get(selectedEmployeeId);
+        const isHistoricalBorrower = empAssets ? (empAssets.has(a.id) || empAssets.has(a.assetNumber)) : false;
+        matchesEmp = a.holderEmployeeId === selectedEmployeeId || isHistoricalBorrower;
+      } else if (activePreset === 'ASSETS_BY_EMPLOYEE') {
+        const hasAnyHistory = Array.from(employeeAssetMap.values()).some((set) => set.has(a.id) || set.has(a.assetNumber));
+        matchesEmp = Boolean(a.holderEmployeeId || hasAnyHistory);
+      }
+
       const matchesSupp = selectedSupplierId === 'ALL' || a.supplierId === selectedSupplierId;
       const matchesManuf = selectedManufacturer === 'ALL' || a.manufacturer === selectedManufacturer;
       const matchesLoc = selectedLocation === 'ALL' || a.location === selectedLocation;
@@ -122,14 +148,13 @@ export const ReportsModule: React.FC = () => {
       if (activePreset === 'ISSUED_ASSETS' && a.status !== 'ISSUED') return false;
       if (activePreset === 'DAMAGED_ASSETS' && a.status !== 'DAMAGED') return false;
       if (activePreset === 'MISSING_ASSETS' && a.status !== 'MISSING' && a.status !== 'LOST') return false;
-      if (activePreset === 'ASSETS_BY_EMPLOYEE' && !a.holderEmployeeId) return false;
 
       return matchesQuery && matchesCat && matchesStat && matchesEmp && matchesSupp && matchesManuf && matchesLoc && matchesDate;
     });
   }, [
     assets, activePreset, searchQuery, selectedCategory, selectedStatus,
     selectedEmployeeId, selectedSupplierId, selectedManufacturer, selectedLocation,
-    dateRangePreset, startDate, endDate
+    dateRangePreset, startDate, endDate, employeeAssetMap
   ]);
 
   // Filtered Transactions Computation
@@ -155,6 +180,9 @@ export const ReportsModule: React.FC = () => {
   // Summary Metrics
   const totalOriginalVal = filteredAssets.reduce((sum, a) => sum + a.purchasePrice, 0);
   const totalCurrentVal = filteredAssets.reduce((sum, a) => sum + a.currentValue, 0);
+  const totalLostVal = filteredAssets
+    .filter(a => a.status === 'LOST' || a.status === 'MISSING')
+    .reduce((sum, a) => sum + (a.currentValue ?? a.purchasePrice ?? 0), 0);
 
   // Export PDF
   const handleExportPDF = () => {
@@ -367,6 +395,7 @@ export const ReportsModule: React.FC = () => {
               <option value="IN_SERVICE">{t('IN SERVICE')}</option>
               <option value="IN_CALIBRATION">{t('IN CALIBRATION')}</option>
               <option value="DAMAGED">{t('DAMAGED')}</option>
+              <option value="LOST">{t('LOST')}</option>
               <option value="MISSING">{t('MISSING')}</option>
               <option value="RETIRED">{t('RETIRED')}</option>
             </select>
@@ -432,7 +461,7 @@ export const ReportsModule: React.FC = () => {
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="glass-card p-4">
           <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Filtered Record Count')}</p>
           <h3 className="text-xl font-extrabold text-slate-800 mt-1">
@@ -446,8 +475,15 @@ export const ReportsModule: React.FC = () => {
         </div>
 
         <div className="glass-card p-4">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Net Book Value')}</p>
-          <h3 className="text-xl font-extrabold text-emerald-600 mt-1">{formatCurrency(totalCurrentVal)}</h3>
+          <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Net Active Book Value')}</p>
+          <h3 className="text-xl font-extrabold text-emerald-600 mt-1">{formatCurrency(totalCurrentVal - totalLostVal)}</h3>
+        </div>
+
+        <div className="glass-card p-4">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Lost Fleet Value (Written Off)')}</p>
+          <h3 className={`text-xl font-extrabold mt-1 ${totalLostVal > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+            {formatCurrency(totalLostVal)}
+          </h3>
         </div>
       </div>
 
@@ -606,7 +642,21 @@ export const ReportsModule: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-500">{ast.location}</td>
-                      <td className="px-4 py-3 text-slate-700 font-medium">{ast.holderEmployeeName || t('Warehouse Storage')}</td>
+                      <td className="px-4 py-3 text-slate-700 font-medium">
+                        {selectedEmployeeId !== 'ALL' ? (
+                          ast.holderEmployeeId === selectedEmployeeId ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              {t('Currently Issued')}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                              {t('Previously Rented')} ({ast.holderEmployeeName || t('Warehouse Storage')})
+                            </span>
+                          )
+                        ) : (
+                          ast.holderEmployeeName || t('Warehouse Storage')
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-slate-800 font-semibold">{formatCurrency(ast.purchasePrice)}</td>
                       <td className="px-4 py-3 text-emerald-600 font-bold">{formatCurrency(ast.currentValue)}</td>
                     </tr>

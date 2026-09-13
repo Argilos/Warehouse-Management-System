@@ -600,6 +600,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'records': 'records',
     'No assets found matching the selected report criteria.': 'No assets found matching the selected report criteria.',
     'Current Custody / Holder': 'Current Custody / Holder',
+    'Currently Issued': 'Currently Issued',
+    'Previously Rented': 'Previously Rented',
 
     // Otpremnica Document Modal
     'Otpremnica': 'Otpremnica / Delivery Note',
@@ -1252,6 +1254,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'records': 'zapisa',
     'No assets found matching the selected report criteria.': 'Niti jedan alat ne odgovara odabranim kriterijima izvještaja.',
     'Current Custody / Holder': 'Trenutno zaduženje / Nosilac',
+    'Currently Issued': 'Trenutno zaduženo',
+    'Previously Rented': 'Ranije zaduživano / vraćeno',
 
     // Otpremnica Modal
     'Otpremnica': 'Otpremnica',
@@ -1904,6 +1908,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'records': 'Datensätze',
     'No assets found matching the selected report criteria.': 'Keine Geräte für die ausgewählten Kriterien gefunden.',
     'Current Custody / Holder': 'Aktuelle Obhut / Inhaber',
+    'Currently Issued': 'Derzeit ausgeliehen',
+    'Previously Rented': 'Früher ausgeliehen',
 
     // Otpremnica Modal
     'Otpremnica': 'Lieferschein / Übergabeschein',

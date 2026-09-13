@@ -58,7 +58,7 @@ interface WarehouseStore {
   deleteAsset: (id: string) => Promise<void>;
 
   // Issuing & Return Actions
-  issueAssets: (assetIds: string[], employeeId: string, projectId?: string, expectedReturnDate?: string, notes?: string) => Promise<void>;
+  issueAssets: (assetIds: string[], employeeId: string, projectId?: string, expectedReturnDate?: string, notes?: string) => Promise<any>;
   returnAsset: (assetId: string, condition: string, notes?: string) => Promise<void>;
   generateOtpremnica: (employeeId: string, projectId?: string, transactionIds?: string[], notes?: string) => Promise<OtpremnicaDocument | null>;
 
@@ -251,7 +251,7 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
 
   issueAssets: async (assetIds, employeeId, projectId, expectedReturnDate, notes) => {
     try {
-      await apiFetch('/transactions/issue', {
+      const createdTrxs = await apiFetch<any[]>('/transactions/issue', {
         method: 'POST',
         body: JSON.stringify({
           assetIds,
@@ -263,8 +263,10 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
         }),
       });
       await get().fetchInitialData();
+      return createdTrxs;
     } catch (err) {
       console.error('Error issuing assets:', err);
+      throw err;
     }
   },
 
@@ -573,22 +575,23 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
         id: created.id,
         documentNumber: created.documentNumber,
         employeeId: created.employeeId,
-        employeeName: created.employee ? `${created.employee.firstName} ${created.employee.lastName}` : undefined,
-        employeeNumber: created.employee?.employeeNumber,
-        employeeDepartment: created.employee?.department,
+        employeeName: created.employee ? `${created.employee.firstName} ${created.employee.lastName}` : created.employeeName,
+        employeeNumber: created.employee?.employeeNumber || created.employeeNumber,
+        employeeDepartment: created.employee?.department || created.employeeDepartment,
         projectId: created.projectId,
-        projectName: created.project?.name,
-        projectCode: created.project?.projectCode,
+        projectName: created.project?.name || created.projectName,
+        projectCode: created.project?.projectCode || created.projectCode,
         createdById: created.createdById,
-        createdByName: created.createdBy ? `${created.createdBy.firstName} ${created.createdBy.lastName}` : undefined,
+        createdByName: created.createdBy ? `${created.createdBy.firstName} ${created.createdBy.lastName}` : created.createdByName,
         issueDate: created.issueDate.slice(0, 10),
         notes: created.notes,
         transactionIds: created.transactionIds || [],
+        items: created.items || [],
         createdAt: created.createdAt,
       };
 
       set((state) => ({
-        otpremnicaDocuments: [formattedDoc, ...state.otpremnicaDocuments],
+        otpremnicaDocuments: [formattedDoc, ...state.otpremnicaDocuments.filter(d => d.id !== formattedDoc.id)],
       }));
 
       get().addAuditLog('OtpremnicaDocument', created.id, 'OTPREMNICA_GENERATED', {

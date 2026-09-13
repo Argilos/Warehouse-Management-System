@@ -7,7 +7,7 @@ import path from 'path';
 dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
-const prisma = new PrismaClient();
+export const prisma = new PrismaClient();
 const router = Router();
 
 // Helper to format dates cleanly or fallback
@@ -528,23 +528,70 @@ router.get('/initial-data', async (req: Request, res: Response) => {
       updatedAt: mt.updatedAt.toISOString(),
     }));
 
-    const formattedOtpremnicaDocs = (otpremnicaDocsRaw || []).map((doc: any) => ({
-      id: doc.id,
-      documentNumber: doc.documentNumber,
-      employeeId: doc.employeeId,
-      employeeName: doc.employee ? `${doc.employee.firstName} ${doc.employee.lastName}` : undefined,
-      employeeNumber: doc.employee?.employeeNumber || undefined,
-      employeeDepartment: doc.employee?.department || undefined,
-      projectId: doc.projectId || undefined,
-      projectName: doc.project?.name || undefined,
-      projectCode: doc.project?.projectCode || undefined,
-      createdById: doc.createdById,
-      createdByName: doc.createdBy ? `${doc.createdBy.firstName} ${doc.createdBy.lastName}` : undefined,
-      issueDate: doc.issueDate.toISOString().slice(0, 10),
-      notes: doc.notes || undefined,
-      transactionIds: doc.transactionIds || [],
-      createdAt: doc.createdAt.toISOString(),
-    }));
+    const trxById = new Map<string, any>();
+    (transactionsRaw || []).forEach((t: any) => {
+      trxById.set(t.id, t);
+    });
+
+    const formattedOtpremnicaDocs = (otpremnicaDocsRaw || []).map((doc: any) => {
+      let docItems: any[] = [];
+      if (doc.transactionIds && doc.transactionIds.length > 0) {
+        docItems = doc.transactionIds
+          .map((tid: string) => trxById.get(tid))
+          .filter((t: any) => t && t.asset)
+          .map((t: any) => ({
+            assetId: t.asset.id,
+            assetNumber: t.asset.assetNumber,
+            assetName: t.asset.name,
+            serialNumber: t.asset.serialNumber,
+            category: t.asset.category,
+            status: t.asset.status,
+            quantity: 1,
+            notes: t.notes || undefined,
+          }));
+      }
+
+      // Fallback for legacy documents where transactionIds were not recorded
+      if (docItems.length === 0 && doc.employeeId) {
+        const docDate = doc.issueDate ? new Date(doc.issueDate).toISOString().slice(0, 10) : '';
+        docItems = (transactionsRaw || [])
+          .filter((t: any) =>
+            t.employeeId === doc.employeeId &&
+            t.transactionType === 'ISSUE' &&
+            t.asset &&
+            (!docDate || t.transactionDate.toISOString().slice(0, 10) === docDate)
+          )
+          .map((t: any) => ({
+            assetId: t.asset.id,
+            assetNumber: t.asset.assetNumber,
+            assetName: t.asset.name,
+            serialNumber: t.asset.serialNumber,
+            category: t.asset.category,
+            status: t.asset.status,
+            quantity: 1,
+            notes: t.notes || undefined,
+          }));
+      }
+
+      return {
+        id: doc.id,
+        documentNumber: doc.documentNumber,
+        employeeId: doc.employeeId,
+        employeeName: doc.employee ? `${doc.employee.firstName} ${doc.employee.lastName}` : undefined,
+        employeeNumber: doc.employee?.employeeNumber || undefined,
+        employeeDepartment: doc.employee?.department || undefined,
+        projectId: doc.projectId || undefined,
+        projectName: doc.project?.name || undefined,
+        projectCode: doc.project?.projectCode || undefined,
+        createdById: doc.createdById,
+        createdByName: doc.createdBy ? `${doc.createdBy.firstName} ${doc.createdBy.lastName}` : undefined,
+        issueDate: doc.issueDate.toISOString().slice(0, 10),
+        notes: doc.notes || undefined,
+        transactionIds: doc.transactionIds || [],
+        items: docItems,
+        createdAt: doc.createdAt.toISOString(),
+      };
+    });
 
     res.json({
       users: formattedUsers,
@@ -614,6 +661,16 @@ router.put('/assets/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
     const body = req.body;
 
+    const existingAsset = await prisma.asset.findUnique({ where: { id } });
+    if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
+
+    // Terminal LOST status enforcement
+    if (existingAsset.status === 'LOST') {
+      return res.status(400).json({
+        error: `Asset "${existingAsset.name}" is marked as LOST (terminal state). No further actions or status transitions are permitted.`
+      });
+    }
+
     const dataToUpdate: any = { ...body };
     delete dataToUpdate.id;
     delete dataToUpdate.holderEmployeeId;
@@ -632,9 +689,9 @@ router.put('/assets/:id', async (req: Request, res: Response) => {
       data: dataToUpdate,
     });
     res.json(updated);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating asset:', error);
-    res.status(500).json({ error: 'Failed to update asset' });
+    res.status(500).json({ error: error.message || 'Failed to update asset' });
   }
 });
 
@@ -653,6 +710,42 @@ router.post('/transactions/issue', async (req: Request, res: Response) => {
   try {
     const { assetIds, employeeId, projectId, expectedReturnDate, notes, performedById } = req.body;
 
+    const targetIds = (assetIds || []) as string[];
+    if (targetIds.length === 0) {
+      return res.status(400).json({ error: 'No assets specified for issuance' });
+    }
+
+    // 1. Guard against LOST status
+    const targetAssets = await prisma.asset.findMany({
+      where: { id: { in: targetIds } },
+    });
+
+    for (const ast of targetAssets) {
+      if (ast.status === 'LOST') {
+        return res.status(400).json({
+          error: `Tool "${ast.name}" (${ast.assetNumber}) is marked as LOST (terminal state) and cannot be issued.`
+        });
+      }
+    }
+
+    // 2. Guard against active Crate assignment
+    // A tool currently assigned to a crate MUST NOT be issued via a new/separate delivery note
+    const crateItems = await prisma.toolBoxItem.findMany({
+      where: { assetId: { in: targetIds } },
+      include: { toolBox: true, asset: true },
+    });
+
+    if (crateItems.length > 0) {
+      const item = crateItems[0];
+      const toolName = item.asset?.name || 'Tool';
+      const toolNum = item.asset?.assetNumber || item.assetId;
+      const crateName = item.toolBox?.name || 'Crate';
+      const crateNum = item.toolBox?.boxNumber || item.toolBoxId;
+      return res.status(400).json({
+        error: `Tool "${toolName}" (${toolNum}) is currently in crate "${crateName}" (${crateNum}) and cannot be issued individually until it is returned or the crate is dismantled.`
+      });
+    }
+
     let user = performedById ? await prisma.user.findUnique({ where: { id: performedById } }) : null;
     if (!user) {
       user = await prisma.user.findFirst();
@@ -670,7 +763,7 @@ router.post('/transactions/issue', async (req: Request, res: Response) => {
 
     const createdTransactions = [];
 
-    for (const assetId of assetIds as string[]) {
+    for (const assetId of targetIds) {
       await prisma.asset.update({
         where: { id: assetId },
         data: { status: 'ISSUED' },
@@ -913,6 +1006,37 @@ router.post('/toolboxes', async (req: Request, res: Response) => {
   try {
     const { boxNumber, name, employeeId, assetIds } = req.body;
 
+    const ids = (assetIds || []) as string[];
+    if (ids.length > 0) {
+      // 1. Validate that no tool is marked LOST
+      const selectedAssets = await prisma.asset.findMany({
+        where: { id: { in: ids } },
+      });
+
+      for (const ast of selectedAssets) {
+        if (ast.status === 'LOST') {
+          return res.status(400).json({
+            error: `Tool "${ast.name}" (${ast.assetNumber}) is marked as LOST (terminal state) and cannot be added to a crate.`
+          });
+        }
+      }
+
+      // 2. Validate that none of the tools are already inside an active crate
+      const existingInCrate = await prisma.toolBoxItem.findFirst({
+        where: { assetId: { in: ids } },
+        include: { toolBox: true, asset: true },
+      });
+
+      if (existingInCrate) {
+        const toolName = existingInCrate.asset?.name || 'Tool';
+        const boxName = existingInCrate.toolBox?.name || 'Crate';
+        return res.status(400).json({
+          error: `Tool "${toolName}" is already packed inside crate "${boxName}". It cannot be added to another crate.`
+        });
+      }
+    }
+
+    // Already-issued tools are permitted into a crate
     const newBox = await prisma.toolBox.create({
       data: {
         boxNumber,
@@ -921,15 +1045,15 @@ router.post('/toolboxes', async (req: Request, res: Response) => {
         status: employeeId ? 'ASSIGNED' : 'UNASSIGNED',
         assignedDate: employeeId ? new Date() : null,
         items: {
-          create: (assetIds || []).map((astId: string) => ({ assetId: astId })),
+          create: ids.map((astId: string) => ({ assetId: astId })),
         },
       },
       include: { employee: true, items: { include: { asset: true } } },
     });
     res.status(201).json(newBox);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating toolbox:', error);
-    res.status(500).json({ error: 'Failed to create toolbox' });
+    res.status(500).json({ error: error.message || 'Failed to create toolbox' });
   }
 });
 
@@ -1036,10 +1160,13 @@ router.post('/toolboxes/:id/dismantle', async (req: Request, res: Response) => {
       where: { toolBoxId: id },
     });
 
-    // Mark contained assets AVAILABLE
+    // Mark contained assets AVAILABLE (unless LOST or RETIRED)
     if (assetIds.length > 0) {
       await prisma.asset.updateMany({
-        where: { id: { in: assetIds } },
+        where: {
+          id: { in: assetIds },
+          status: { notIn: ['LOST', 'RETIRED'] },
+        },
         data: { status: 'AVAILABLE' },
       });
 
@@ -1077,6 +1204,14 @@ router.post('/service-orders', async (req: Request, res: Response) => {
   try {
     const { assetId, supplierId, problemDescription } = req.body;
 
+    const existingAsset = await prisma.asset.findUnique({ where: { id: assetId } });
+    if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
+    if (existingAsset.status === 'LOST') {
+      return res.status(400).json({
+        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be sent to maintenance/service.`
+      });
+    }
+
     await prisma.asset.update({
       where: { id: assetId },
       data: { status: 'IN_SERVICE' },
@@ -1107,25 +1242,32 @@ router.post('/service-orders', async (req: Request, res: Response) => {
     }
 
     res.status(201).json(newOrder);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating service order:', error);
-    res.status(500).json({ error: 'Failed to create service order' });
+    res.status(500).json({ error: error.message || 'Failed to create service order' });
   }
 });
 
 router.put('/service-orders/:id/complete', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { repairCost, replacedParts } = req.body;
+    const { repairCost, replacedParts, notes } = req.body;
 
-    const order = await prisma.serviceOrder.update({
+    const order = await prisma.serviceOrder.findUnique({
+      where: { id },
+      include: { asset: true },
+    });
+    if (!order) return res.status(404).json({ error: 'Service order not found' });
+
+    const updated = await prisma.serviceOrder.update({
       where: { id },
       data: {
         status: 'COMPLETED',
-        repairCost: Number(repairCost) || 0,
-        replacedParts: replacedParts || null,
         receivedDate: new Date(),
+        repairCost: Number(repairCost) || 0,
+        replacedParts,
       },
+      include: { asset: true, supplier: true },
     });
 
     await prisma.asset.update({
@@ -1133,7 +1275,7 @@ router.put('/service-orders/:id/complete', async (req: Request, res: Response) =
       data: { status: 'AVAILABLE' },
     });
 
-    res.json(order);
+    res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Failed to complete service order' });
   }
@@ -1154,19 +1296,37 @@ router.get('/calibrations', async (req: Request, res: Response) => {
 router.post('/calibrations/send-to-lab', async (req: Request, res: Response) => {
   try {
     const { assetId } = req.body;
+
+    const existingAsset = await prisma.asset.findUnique({ where: { id: assetId } });
+    if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
+    if (existingAsset.status === 'LOST') {
+      return res.status(400).json({
+        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be sent to calibration lab.`
+      });
+    }
+
     const updatedAsset = await prisma.asset.update({
       where: { id: assetId },
       data: { status: 'IN_CALIBRATION' },
     });
     res.json(updatedAsset);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to send tool to calibration lab' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to send tool to calibration lab' });
   }
 });
 
 router.post('/calibrations', async (req: Request, res: Response) => {
   try {
     const body = req.body;
+
+    const existingAsset = await prisma.asset.findUnique({ where: { id: body.assetId } });
+    if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
+    if (existingAsset.status === 'LOST') {
+      return res.status(400).json({
+        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be calibrated.`
+      });
+    }
+
     const newRecord = await prisma.calibrationRecord.create({
       data: {
         assetId: body.assetId,
@@ -1440,6 +1600,15 @@ router.get('/maintenance-plans', async (req: Request, res: Response) => {
 router.post('/maintenance-plans', async (req: Request, res: Response) => {
   try {
     const body = req.body;
+
+    const existingAsset = await prisma.asset.findUnique({ where: { id: body.assetId } });
+    if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
+    if (existingAsset.status === 'LOST') {
+      return res.status(400).json({
+        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be assigned a maintenance plan.`
+      });
+    }
+
     const firstDueDate = parseDate(body.firstDueDate);
 
     const newPlan = await prisma.maintenancePlan.create({
@@ -1566,6 +1735,15 @@ router.get('/maintenance-tasks', async (req: Request, res: Response) => {
 router.post('/maintenance-tasks', async (req: Request, res: Response) => {
   try {
     const body = req.body;
+
+    const existingAsset = await prisma.asset.findUnique({ where: { id: body.assetId } });
+    if (!existingAsset) return res.status(404).json({ error: 'Asset not found' });
+    if (existingAsset.status === 'LOST') {
+      return res.status(400).json({
+        error: `Tool "${existingAsset.name}" is marked as LOST (terminal state) and cannot be assigned maintenance tasks.`
+      });
+    }
+
     const now = new Date();
     const randNum = Math.floor(100 + Math.random() * 900);
     const taskNumber = body.taskNumber || `PM-${now.getFullYear()}-${randNum}`;
@@ -1601,6 +1779,12 @@ router.put('/maintenance-tasks/:id/start', async (req: Request, res: Response) =
       return res.status(404).json({ error: 'Task not found' });
     }
 
+    if (task.asset.status === 'LOST') {
+      return res.status(400).json({
+        error: `Tool "${task.asset.name}" is marked as LOST (terminal state) and cannot be serviced.`
+      });
+    }
+
     await prisma.asset.update({
       where: { id: task.assetId },
       data: { status: 'IN_SERVICE' },
@@ -1634,6 +1818,7 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
       checklistProgress,
       overrideReason,
       completedById,
+      status: reqStatus,
     } = req.body;
 
     const task = await prisma.maintenanceTask.findUnique({
@@ -1647,7 +1832,79 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
 
     const totalCost = (Number(laborCost) || 0) + (Number(partsCost) || 0);
     const now = new Date();
+    const rawResult = String(result || 'PASS').toUpperCase();
 
+    // 1) Result = NOT COMPLETE / INCOMPLETE
+    // Keep the tool in the maintenance waiting list, keep task open/pending, do not advance tool status or plan schedule.
+    if (rawResult === 'NOT_COMPLETE' || rawResult === 'INCOMPLETE' || reqStatus === 'PENDING' || reqStatus === 'IN_PROGRESS') {
+      const updatedTask = await prisma.maintenanceTask.update({
+        where: { id },
+        data: {
+          status: 'IN_PROGRESS',
+          actualDurationMinutes: Number(actualDurationMinutes) || 0,
+          laborCost: Number(laborCost) || 0,
+          partsCost: Number(partsCost) || 0,
+          totalCost,
+          result: 'NOT_COMPLETE',
+          notes,
+          checklistProgress: checklistProgress || undefined,
+          overrideReason: overrideReason || null,
+        },
+        include: { asset: true, plan: true, assignedTo: true },
+      });
+      return res.json(updatedTask);
+    }
+
+    // 2) Result = FAILED
+    // Do NOT change the tool's status to anything issuable or "maintenance done".
+    // Tool remains in the status it had before the maintenance attempt (e.g. IN_SERVICE).
+    // Log the failed attempt on the task record for history/audit, but do not advance the tool's workflow status or plan schedule.
+    if (rawResult === 'FAILED' || rawResult === 'FAIL') {
+      const updatedTask = await prisma.maintenanceTask.update({
+        where: { id },
+        data: {
+          status: 'FAILED',
+          completedAt: now,
+          actualDurationMinutes: Number(actualDurationMinutes) || 60,
+          laborCost: Number(laborCost) || 0,
+          partsCost: Number(partsCost) || 0,
+          totalCost,
+          result: 'FAILED',
+          notes: notes || 'Maintenance inspection failed.',
+          checklistProgress: checklistProgress || undefined,
+          overrideReason: overrideReason || null,
+        },
+        include: { asset: true, plan: true, assignedTo: true },
+      });
+
+      const user = completedById ? await prisma.user.findUnique({ where: { id: completedById } }) : await prisma.user.findFirst();
+      if (user) {
+        await prisma.notification.create({
+          data: {
+            userId: user.id,
+            type: 'SERVICE',
+            title: `Maintenance Failed: ${task.asset.name}`,
+            message: `Maintenance task [${task.taskNumber}] for ${task.asset.name} was marked as FAILED. Tool remains out of service.`,
+            isRead: false,
+          },
+        });
+        await prisma.auditLog.create({
+          data: {
+            userId: user.id,
+            entity: 'MaintenanceTask',
+            entityId: task.id,
+            action: 'MAINTENANCE_ATTEMPT_FAILED',
+            newValues: { result: 'FAILED', totalCost, notes },
+            oldValues: { status: task.status },
+          },
+        });
+      }
+
+      return res.json(updatedTask);
+    }
+
+    // 3) Result = PASSED / COMPLETED
+    // Only a task explicitly marked COMPLETED/PASSED is allowed to move tool status back to AVAILABLE
     const updatedTask = await prisma.maintenanceTask.update({
       where: { id },
       data: {
@@ -1657,7 +1914,7 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
         laborCost: Number(laborCost) || 0,
         partsCost: Number(partsCost) || 0,
         totalCost,
-        result,
+        result: 'PASSED',
         notes,
         checklistProgress: checklistProgress || undefined,
         overrideReason: overrideReason || null,
@@ -1665,10 +1922,9 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
       include: { asset: true, plan: true, assignedTo: true },
     });
 
-    const nextAssetStatus = result === 'FAILED' ? 'DAMAGED' : 'AVAILABLE';
     await prisma.asset.update({
       where: { id: task.assetId },
-      data: { status: nextAssetStatus },
+      data: { status: 'AVAILABLE' },
     });
 
     if (task.planId && task.plan) {
@@ -1689,7 +1945,7 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
           userId: user.id,
           type: 'SERVICE',
           title: `Preventive Maintenance Completed: ${task.asset.name}`,
-          message: `Maintenance task [${task.taskNumber}] completed with result ${result}. Total Cost: €${totalCost.toFixed(2)}.`,
+          message: `Maintenance task [${task.taskNumber}] completed successfully with result PASSED. Total Cost: €${totalCost.toFixed(2)}.`,
           isRead: false,
         },
       });
@@ -1701,7 +1957,7 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
             entity: 'MaintenanceTask',
             entityId: task.id,
             action: 'CHECKLIST_OVERRIDE_COMPLETED',
-            newValues: { result, totalCost, overrideReason },
+            newValues: { result: 'PASSED', totalCost, overrideReason },
             oldValues: { status: task.status },
           },
         });
@@ -1722,7 +1978,52 @@ router.get('/otpremnica', async (req: Request, res: Response) => {
       include: { employee: true, project: true, createdBy: true },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(docs);
+
+    const allTransactionIds = Array.from(new Set(docs.flatMap((d: any) => d.transactionIds || [])));
+    const transactions = allTransactionIds.length > 0 ? await prisma.assetTransaction.findMany({
+      where: { id: { in: allTransactionIds } },
+      include: { asset: true },
+    }) : [];
+
+    const trxById = new Map<string, any>();
+    transactions.forEach((t: any) => trxById.set(t.id, t));
+
+    const formattedDocs = docs.map((doc: any) => {
+      const items = (doc.transactionIds || [])
+        .map((tid: string) => trxById.get(tid))
+        .filter((t: any) => t && t.asset)
+        .map((t: any) => ({
+          assetId: t.asset.id,
+          assetNumber: t.asset.assetNumber,
+          assetName: t.asset.name,
+          serialNumber: t.asset.serialNumber,
+          category: t.asset.category,
+          status: t.asset.status,
+          quantity: 1,
+          notes: t.notes || undefined,
+        }));
+
+      return {
+        id: doc.id,
+        documentNumber: doc.documentNumber,
+        employeeId: doc.employeeId,
+        employeeName: doc.employee ? `${doc.employee.firstName} ${doc.employee.lastName}` : undefined,
+        employeeNumber: doc.employee?.employeeNumber || undefined,
+        employeeDepartment: doc.employee?.department || undefined,
+        projectId: doc.projectId || undefined,
+        projectName: doc.project?.name || undefined,
+        projectCode: doc.project?.projectCode || undefined,
+        createdById: doc.createdById,
+        createdByName: doc.createdBy ? `${doc.createdBy.firstName} ${doc.createdBy.lastName}` : undefined,
+        issueDate: doc.issueDate.toISOString().slice(0, 10),
+        notes: doc.notes || undefined,
+        transactionIds: doc.transactionIds || [],
+        items,
+        createdAt: doc.createdAt.toISOString(),
+      };
+    });
+
+    res.json(formattedDocs);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch otpremnica documents' });
   }
@@ -1744,6 +2045,20 @@ router.post('/otpremnica/generate', async (req: Request, res: Response) => {
     const seqNum = String(count + 1).padStart(4, '0');
     const documentNumber = `OTP-${currentYear}-${seqNum}`;
 
+    // If transactionIds was empty, automatically find the latest unassigned ISSUE transactions for this employee
+    let effectiveTransactionIds = (transactionIds || []) as string[];
+    if (effectiveTransactionIds.length === 0 && employeeId) {
+      const recentTrxs = await prisma.assetTransaction.findMany({
+        where: {
+          employeeId,
+          transactionType: 'ISSUE',
+          transactionDate: { gte: new Date(Date.now() - 5 * 60 * 1000) },
+        },
+        orderBy: { transactionDate: 'desc' },
+      });
+      effectiveTransactionIds = recentTrxs.map(t => t.id);
+    }
+
     const doc = await prisma.otpremnicaDocument.create({
       data: {
         documentNumber,
@@ -1752,10 +2067,27 @@ router.post('/otpremnica/generate', async (req: Request, res: Response) => {
         createdById: user.id,
         issueDate: new Date(),
         notes: notes || null,
-        transactionIds: transactionIds || [],
+        transactionIds: effectiveTransactionIds,
       },
       include: { employee: true, project: true, createdBy: true },
     });
+
+    // Query linked transactions with their assets to format items
+    const transactions = effectiveTransactionIds.length > 0 ? await prisma.assetTransaction.findMany({
+      where: { id: { in: effectiveTransactionIds } },
+      include: { asset: true },
+    }) : [];
+
+    const items = transactions.map((t: any) => ({
+      assetId: t.asset.id,
+      assetNumber: t.asset.assetNumber,
+      assetName: t.asset.name,
+      serialNumber: t.asset.serialNumber,
+      category: t.asset.category,
+      status: t.asset.status,
+      quantity: 1,
+      notes: t.notes || undefined,
+    }));
 
     await prisma.auditLog.create({
       data: {
@@ -1763,11 +2095,28 @@ router.post('/otpremnica/generate', async (req: Request, res: Response) => {
         entity: 'OtpremnicaDocument',
         entityId: doc.id,
         action: 'OTPREMNICA_GENERATED',
-        newValues: { documentNumber, employeeId, projectId, transactionCount: (transactionIds || []).length },
+        newValues: { documentNumber, employeeId, projectId, transactionCount: effectiveTransactionIds.length },
       },
     });
 
-    res.status(201).json(doc);
+    res.status(201).json({
+      id: doc.id,
+      documentNumber: doc.documentNumber,
+      employeeId: doc.employeeId,
+      employeeName: doc.employee ? `${doc.employee.firstName} ${doc.employee.lastName}` : undefined,
+      employeeNumber: doc.employee?.employeeNumber || undefined,
+      employeeDepartment: doc.employee?.department || undefined,
+      projectId: doc.projectId || undefined,
+      projectName: doc.project?.name || undefined,
+      projectCode: doc.project?.projectCode || undefined,
+      createdById: doc.createdById,
+      createdByName: doc.createdBy ? `${doc.createdBy.firstName} ${doc.createdBy.lastName}` : undefined,
+      issueDate: doc.issueDate.toISOString().slice(0, 10),
+      notes: doc.notes || undefined,
+      transactionIds: doc.transactionIds || [],
+      items,
+      createdAt: doc.createdAt.toISOString(),
+    });
   } catch (error: any) {
     console.error('Error generating Otpremnica:', error);
     res.status(500).json({ error: error.message || 'Failed to generate Otpremnica document' });
