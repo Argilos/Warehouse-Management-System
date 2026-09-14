@@ -266,13 +266,36 @@ async function runTests() {
     );
   });
 
-  await test('2.2 Already-issued tool CAN be added to a crate (ToolBox)', async () => {
+  await test('2.2 Only AVAILABLE tools can be added to a crate (ISSUED tool is rejected with 400)', async () => {
     (prisma.asset as any).findMany = async () => [
       {
         id: 'asset-issued-1',
         name: 'Circular Saw',
         assetNumber: 'CS-01',
         status: 'ISSUED',
+      },
+    ];
+
+    const res = await apiRequest('POST', '/toolboxes', {
+      name: 'Carpentry Toolbox',
+      description: 'Site carpentry crate',
+      assetIds: ['asset-issued-1'],
+    });
+
+    assertEquals(res.status, 400, 'Expected 400 Bad Request for non-available tool');
+    assert(
+      res.data.error && res.data.error.includes('Only AVAILABLE tools can be packed'),
+      `Expected strict AVAILABLE rejection error, got: ${res.data.error}`
+    );
+  });
+
+  await test('2.2b Available tools CAN be added to a crate (ToolBox)', async () => {
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-avail-1',
+        name: 'Circular Saw',
+        assetNumber: 'CS-01',
+        status: 'AVAILABLE',
       },
     ];
 
@@ -286,12 +309,12 @@ async function runTests() {
       items: [
         {
           id: 'tbi-new',
-          assetId: 'asset-issued-1',
+          assetId: 'asset-avail-1',
           asset: {
-            id: 'asset-issued-1',
+            id: 'asset-avail-1',
             name: 'Circular Saw',
             assetNumber: 'CS-01',
-            status: 'ISSUED',
+            status: 'AVAILABLE',
           },
         },
       ],
@@ -300,7 +323,7 @@ async function runTests() {
     const res = await apiRequest('POST', '/toolboxes', {
       name: 'Carpentry Toolbox',
       description: 'Site carpentry crate',
-      assetIds: ['asset-issued-1'],
+      assetIds: ['asset-avail-1'],
     });
 
     assertEquals(res.status, 201, 'Expected 201 Created');
@@ -885,6 +908,114 @@ async function runTests() {
     assertEquals(createdMaintenanceTask.type, 'REACTIVE', 'MaintenanceTask must have type REACTIVE');
     assertEquals(createdMaintenanceTask.priority, 'HIGH', 'MaintenanceTask must have priority HIGH');
     assertEquals(createdMaintenanceTask.status, 'PENDING', 'MaintenanceTask must have status PENDING');
+  });
+
+  await test('4.5 Dispatching a PENDING service order moves tool from DAMAGED to IN_SERVICE and advances reactive task', async () => {
+    let assetStatus: string = 'DAMAGED';
+    let serviceOrderStatus: string = 'PENDING';
+    let taskStatus: string = 'PENDING';
+
+    (prisma.serviceOrder as any).findUnique = async () => ({
+      id: 'so-pending-1',
+      assetId: 'asset-dmg-dispatch',
+      supplierId: null,
+      problemDescription: 'Motor ceased',
+      status: 'PENDING',
+      asset: { id: 'asset-dmg-dispatch', name: 'Angle Grinder', assetNumber: 'AG-01', status: 'DAMAGED' },
+    });
+
+    (prisma.asset as any).update = async (args: any) => {
+      assetStatus = args.data.status;
+      return { id: 'asset-dmg-dispatch', status: assetStatus };
+    };
+
+    (prisma.serviceOrder as any).update = async (args: any) => {
+      serviceOrderStatus = args.data.status;
+      return {
+        id: 'so-pending-1',
+        assetId: 'asset-dmg-dispatch',
+        supplierId: args.data.supplierId,
+        problemDescription: args.data.problemDescription,
+        status: serviceOrderStatus,
+        sentDate: args.data.sentDate,
+        asset: { id: 'asset-dmg-dispatch', name: 'Angle Grinder', assetNumber: 'AG-01' },
+        supplier: { id: 'sup-1', companyName: 'Authorized Bosch Repair' },
+      };
+    };
+
+    (prisma.maintenanceTask as any).findFirst = async () => ({
+      id: 'task-rm-1',
+      assetId: 'asset-dmg-dispatch',
+      status: 'PENDING',
+    });
+
+    (prisma.maintenanceTask as any).update = async (args: any) => {
+      taskStatus = args.data.status;
+      return { id: 'task-rm-1', status: taskStatus };
+    };
+
+    (prisma.user as any).findFirst = async () => ({ id: 'usr-1', email: 'admin@warehouse.com' });
+    (prisma.notification as any).create = async () => ({ id: 'notif-disp' });
+    (prisma.auditLog as any).create = async () => ({ id: 'log-disp' });
+
+    const res = await apiRequest('PUT', '/service-orders/so-pending-1/dispatch', {
+      supplierId: 'sup-1',
+      problemDescription: 'Bearing replacement and stator rewind required',
+    });
+
+    assertEquals(res.status, 200, 'Expected 200 OK for dispatch');
+    assertEquals(serviceOrderStatus, 'SENT', 'Service order status must be SENT');
+    assertEquals(assetStatus, 'IN_SERVICE', 'Tool status must transition from DAMAGED to IN_SERVICE');
+    assertEquals(taskStatus, 'IN_PROGRESS', 'Linked reactive maintenance task must advance to IN_PROGRESS');
+  });
+
+  await test('4.6 Completing a dispatched service order restores tool to AVAILABLE and completes reactive maintenance task', async () => {
+    let assetStatus: string = 'IN_SERVICE';
+    let serviceOrderStatus: string = 'SENT';
+    let taskStatus: string = 'IN_PROGRESS';
+
+    (prisma.serviceOrder as any).findUnique = async () => ({
+      id: 'so-pending-1',
+      assetId: 'asset-dmg-dispatch',
+      status: 'SENT',
+      asset: { id: 'asset-dmg-dispatch', name: 'Angle Grinder', assetNumber: 'AG-01', status: 'IN_SERVICE' },
+    });
+
+    (prisma.serviceOrder as any).update = async (args: any) => {
+      serviceOrderStatus = args.data.status;
+      return {
+        id: 'so-pending-1',
+        ...args.data,
+        asset: { id: 'asset-dmg-dispatch', name: 'Angle Grinder', assetNumber: 'AG-01' },
+      };
+    };
+
+    (prisma.asset as any).update = async (args: any) => {
+      assetStatus = args.data.status;
+      return { id: 'asset-dmg-dispatch', status: assetStatus };
+    };
+
+    (prisma.maintenanceTask as any).findFirst = async () => ({
+      id: 'task-rm-1',
+      assetId: 'asset-dmg-dispatch',
+      status: 'IN_PROGRESS',
+    });
+
+    (prisma.maintenanceTask as any).update = async (args: any) => {
+      taskStatus = args.data.status;
+      return { id: 'task-rm-1', status: taskStatus };
+    };
+
+    const res = await apiRequest('PUT', '/service-orders/so-pending-1/complete', {
+      repairCost: 140,
+      replacedParts: 'Bearings, armature brush kit',
+      notes: 'Calibrated and load tested',
+    });
+
+    assertEquals(res.status, 200, 'Expected 200 OK for service completion');
+    assertEquals(serviceOrderStatus, 'COMPLETED', 'Service order must be COMPLETED');
+    assertEquals(assetStatus, 'AVAILABLE', 'Tool status must transition back to AVAILABLE');
+    assertEquals(taskStatus, 'COMPLETED', 'Linked reactive maintenance task must be marked COMPLETED');
   });
 
   // --------------------------------------------------------------------------

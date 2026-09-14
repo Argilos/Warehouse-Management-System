@@ -1273,12 +1273,11 @@ router.post('/toolboxes', async (req: Request, res: Response) => {
         where: { id: { in: ids } },
       });
 
-      const nonPackableStatuses = new Set(['LOST', 'MISSING', 'DAMAGED', 'IN_SERVICE', 'IN_CALIBRATION', 'RETIRED']);
       for (const ast of selectedAssets) {
         const statusUpper = (ast.status || '').toUpperCase();
-        if (nonPackableStatuses.has(statusUpper)) {
+        if (statusUpper !== 'AVAILABLE') {
           return res.status(400).json({
-            error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be added to a kit/crate.`
+            error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be added to a kit/crate. Only AVAILABLE tools can be packed.`
           });
         }
       }
@@ -1336,12 +1335,11 @@ router.post('/toolboxes/:id/items', async (req: Request, res: Response) => {
       where: { id: { in: ids } },
     });
 
-    const nonPackableStatuses = new Set(['LOST', 'MISSING', 'DAMAGED', 'IN_SERVICE', 'IN_CALIBRATION', 'RETIRED']);
     for (const ast of selectedAssets) {
       const statusUpper = (ast.status || '').toUpperCase();
-      if (nonPackableStatuses.has(statusUpper)) {
+      if (statusUpper !== 'AVAILABLE') {
         return res.status(400).json({
-          error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be added to a kit/crate.`
+          error: `Tool "${ast.name}" (${ast.assetNumber}) has status ${ast.status} and cannot be added to a kit/crate. Only AVAILABLE tools can be packed.`
         });
       }
     }
@@ -1616,16 +1614,46 @@ router.post('/service-orders', async (req: Request, res: Response) => {
       data: { status: 'IN_SERVICE' },
     });
 
-    const newOrder = await prisma.serviceOrder.create({
-      data: {
-        assetId,
-        supplierId: supplierId || null,
-        problemDescription,
-        sentDate: new Date(),
-        status: 'SENT',
-      },
-      include: { asset: true, supplier: true },
+    // Check if an existing PENDING service order exists for this asset (e.g. from damaged return)
+    const pendingOrder = await prisma.serviceOrder.findFirst({
+      where: { assetId, status: 'PENDING' },
     });
+
+    let newOrder;
+    if (pendingOrder) {
+      newOrder = await prisma.serviceOrder.update({
+        where: { id: pendingOrder.id },
+        data: {
+          supplierId: supplierId || null,
+          problemDescription: problemDescription || pendingOrder.problemDescription,
+          sentDate: new Date(),
+          status: 'SENT',
+        },
+        include: { asset: true, supplier: true },
+      });
+    } else {
+      newOrder = await prisma.serviceOrder.create({
+        data: {
+          assetId,
+          supplierId: supplierId || null,
+          problemDescription,
+          sentDate: new Date(),
+          status: 'SENT',
+        },
+        include: { asset: true, supplier: true },
+      });
+    }
+
+    // Also advance any linked reactive maintenance task from PENDING to IN_PROGRESS
+    const linkedTask = await prisma.maintenanceTask.findFirst({
+      where: { assetId, status: 'PENDING' },
+    });
+    if (linkedTask) {
+      await prisma.maintenanceTask.update({
+        where: { id: linkedTask.id },
+        data: { status: 'IN_PROGRESS', startedAt: new Date() },
+      });
+    }
 
     const user = await prisma.user.findFirst();
     if (user) {
@@ -1644,6 +1672,74 @@ router.post('/service-orders', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error creating service order:', error);
     res.status(500).json({ error: error.message || 'Failed to create service order' });
+  }
+});
+
+router.put('/service-orders/:id/dispatch', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { supplierId, problemDescription } = req.body;
+
+    const order = await prisma.serviceOrder.findUnique({
+      where: { id },
+      include: { asset: true },
+    });
+    if (!order) return res.status(404).json({ error: 'Service order not found' });
+
+    await prisma.asset.update({
+      where: { id: order.assetId },
+      data: { status: 'IN_SERVICE' },
+    });
+
+    const updated = await prisma.serviceOrder.update({
+      where: { id },
+      data: {
+        supplierId: supplierId || null,
+        problemDescription: problemDescription || order.problemDescription,
+        sentDate: new Date(),
+        status: 'SENT',
+      },
+      include: { asset: true, supplier: true },
+    });
+
+    // Advance any linked reactive maintenance task from PENDING to IN_PROGRESS
+    const linkedTask = await prisma.maintenanceTask.findFirst({
+      where: { assetId: order.assetId, status: 'PENDING' },
+    });
+    if (linkedTask) {
+      await prisma.maintenanceTask.update({
+        where: { id: linkedTask.id },
+        data: { status: 'IN_PROGRESS', startedAt: new Date() },
+      });
+    }
+
+    const user = await prisma.user.findFirst();
+    if (user) {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'SERVICE',
+          title: `Repair Service Dispatched: ${updated.asset.name}`,
+          message: `Equipment ${updated.asset.assetNumber} dispatched for repair to ${updated.supplier?.companyName || 'Internal Workshop'}.`,
+          isRead: false,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          entity: 'ServiceOrder',
+          entityId: order.id,
+          action: 'SERVICE_ORDER_DISPATCHED',
+          newValues: { status: 'SENT', supplierId: updated.supplierId, assetStatus: 'IN_SERVICE' },
+        },
+      });
+    }
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error('Error dispatching service order:', error);
+    res.status(500).json({ error: error.message || 'Failed to dispatch service order' });
   }
 });
 
@@ -1673,6 +1769,23 @@ router.put('/service-orders/:id/complete', async (req: Request, res: Response) =
       where: { id: order.assetId },
       data: { status: 'AVAILABLE' },
     });
+
+    // Advance any linked reactive maintenance task from PENDING/IN_PROGRESS to COMPLETED
+    const linkedTask = await prisma.maintenanceTask.findFirst({
+      where: { assetId: order.assetId, status: { in: ['PENDING', 'IN_PROGRESS'] } },
+    });
+    if (linkedTask) {
+      await prisma.maintenanceTask.update({
+        where: { id: linkedTask.id },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          result: 'PASSED',
+          laborCost: Number(repairCost) || 0,
+          notes: notes ? `Service repair completed: ${notes}` : 'Service repair completed successfully.',
+        },
+      });
+    }
 
     res.json(updated);
   } catch (error) {

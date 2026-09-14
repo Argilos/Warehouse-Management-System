@@ -59,11 +59,12 @@ interface WarehouseStore {
 
   // Issuing & Return Actions
   issueAssets: (assetIds: string[], employeeId: string, projectId?: string, expectedReturnDate?: string, notes?: string) => Promise<any>;
-  returnAsset: (assetId: string, condition: string, notes?: string) => Promise<void>;
+  returnAsset: (assetId: string, condition: string, notes?: string) => Promise<any>;
   generateOtpremnica: (employeeId: string, projectId?: string, transactionIds?: string[], notes?: string) => Promise<OtpremnicaDocument | null>;
 
   // Maintenance Actions
-  createServiceOrder: (assetId: string, supplierId: string, problemDescription: string) => Promise<void>;
+  createServiceOrder: (assetId: string, supplierId: string, problemDescription: string) => Promise<any>;
+  dispatchServiceOrder: (serviceOrderId: string, supplierId?: string, problemDescription?: string) => Promise<any>;
   completeServiceOrder: (serviceOrderId: string, repairCost: number, replacedParts: string) => Promise<void>;
 
   // Preventive Maintenance Actions
@@ -272,7 +273,7 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
 
   returnAsset: async (assetId, condition, notes) => {
     try {
-      await apiFetch('/transactions/return', {
+      const res = await apiFetch('/transactions/return', {
         method: 'POST',
         body: JSON.stringify({
           assetId,
@@ -282,20 +283,38 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
         }),
       });
       await get().fetchInitialData();
+      return res;
     } catch (err) {
       console.error('Error returning asset:', err);
+      throw err;
     }
   },
 
   createServiceOrder: async (assetId, supplierId, problemDescription) => {
     try {
-      await apiFetch('/service-orders', {
+      const res = await apiFetch('/service-orders', {
         method: 'POST',
         body: JSON.stringify({ assetId, supplierId, problemDescription }),
       });
       await get().fetchInitialData();
+      return res;
     } catch (err) {
       console.error('Error creating service order:', err);
+      throw err;
+    }
+  },
+
+  dispatchServiceOrder: async (serviceOrderId, supplierId, problemDescription) => {
+    try {
+      const res = await apiFetch(`/service-orders/${serviceOrderId}/dispatch`, {
+        method: 'PUT',
+        body: JSON.stringify({ supplierId, problemDescription }),
+      });
+      await get().fetchInitialData();
+      return res;
+    } catch (err) {
+      console.error('Error dispatching service order:', err);
+      throw err;
     }
   },
 

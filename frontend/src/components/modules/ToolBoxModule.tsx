@@ -41,17 +41,10 @@ export const ToolBoxModule: React.FC = () => {
   );
 
   // Tools eligible for packing into a crate/kit:
-  // Exclude LOST, MISSING, DAMAGED, IN_SERVICE, IN_CALIBRATION, and RETIRED tools, as well as tools already inside an active crate.
+  // Strictly ONLY tools with status AVAILABLE and not already inside an active crate.
   const packableAssets = assets.filter((ast) => {
     const statusUpper = (ast.status || '').toUpperCase();
-    const isExcludedStatus =
-      statusUpper === 'LOST' ||
-      statusUpper === 'MISSING' ||
-      statusUpper === 'DAMAGED' ||
-      statusUpper === 'IN_SERVICE' ||
-      statusUpper === 'IN_CALIBRATION' ||
-      statusUpper === 'RETIRED';
-    return !isExcludedStatus && !alreadyCratedAssetIds.has(ast.id);
+    return statusUpper === 'AVAILABLE' && !alreadyCratedAssetIds.has(ast.id);
   });
 
   const handleOpenInventory = (box: ToolBox) => {

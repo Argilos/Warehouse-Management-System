@@ -1,40 +1,34 @@
 import React, { useState } from 'react';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
+import { CreateServiceOrderModal } from './CreateServiceOrderModal';
 import { formatCurrency } from '../../utils/depreciation';
 import { useLanguageStore } from '../../store/useLanguageStore';
-import { Wrench, Plus } from 'lucide-react';
+import { Wrench, Plus, Send } from 'lucide-react';
 
 export const MaintenanceModule: React.FC = () => {
   const {
-    serviceOrders, assets, suppliers, createServiceOrder, completeServiceOrder, activeRole
+    serviceOrders, assets, suppliers, completeServiceOrder, activeRole
   } = useWarehouseStore();
   const { t } = useLanguageStore();
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedAssetId, setSelectedAssetId] = useState('');
-  const [selectedSupplierId, setSelectedSupplierId] = useState('');
-  const [problemDescription, setProblemDescription] = useState('');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [dispatchModalOrderId, setDispatchModalOrderId] = useState<string | null>(null);
+  const [dispatchModalAssetId, setDispatchModalAssetId] = useState<string | undefined>(undefined);
+  const [dispatchModalDesc, setDispatchModalDesc] = useState<string | undefined>(undefined);
 
   const [completeModalId, setCompleteModalId] = useState<string | null>(null);
   const [repairCost, setRepairCost] = useState<number>(100);
   const [replacedParts, setReplacedParts] = useState<string>('Standard seal replacement');
 
-  const serviceableAssets = assets.filter(
-    (a) => a.status !== 'LOST' && a.status !== 'MISSING' && a.status !== 'RETIRED'
-  );
-
   const handleOpenCreateModal = () => {
-    if (serviceableAssets.length > 0) setSelectedAssetId(serviceableAssets[0].id);
-    if (suppliers.length > 0) setSelectedSupplierId(suppliers[0].id);
-    setProblemDescription('');
-    setIsModalOpen(true);
+    setIsCreateModalOpen(true);
   };
 
-  const handleSubmitCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    createServiceOrder(selectedAssetId, selectedSupplierId, problemDescription);
-    setIsModalOpen(false);
+  const handleOpenDispatchModal = (srv: any) => {
+    setDispatchModalOrderId(srv.id);
+    setDispatchModalAssetId(srv.assetId);
+    setDispatchModalDesc(srv.problemDescription);
   };
 
   const handleSubmitComplete = (e: React.FormEvent) => {
@@ -111,25 +105,39 @@ export const MaintenanceModule: React.FC = () => {
                     <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{srv.problemDescription}</td>
                     <td className="px-4 py-3 text-slate-400">{srv.sentDate}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${srv.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
+                        srv.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        srv.status === 'PENDING' ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' :
+                        'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
                         {t(srv.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 font-bold text-emerald-600">{formatCurrency(srv.repairCost)}</td>
                     <td className="px-4 py-3 text-right">
-                      {srv.status !== 'COMPLETED' && (
-                        <button
-                          onClick={() => {
-                            setCompleteModalId(srv.id);
-                            setRepairCost(srv.repairCost || 150);
-                            setReplacedParts(srv.replacedParts || '');
-                          }}
-                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-semibold text-[11px] transition-all"
-                        >
-                          {t('Complete Order')}
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {srv.status === 'PENDING' && (
+                          <button
+                            onClick={() => handleOpenDispatchModal(srv)}
+                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded font-semibold text-[11px] transition-all flex items-center gap-1 shadow-sm"
+                          >
+                            <Send className="w-3 h-3 text-amber-600" />
+                            <span>{t('Dispatch Service Order')}</span>
+                          </button>
+                        )}
+                        {srv.status !== 'COMPLETED' && (
+                          <button
+                            onClick={() => {
+                              setCompleteModalId(srv.id);
+                              setRepairCost(srv.repairCost || 150);
+                              setReplacedParts(srv.replacedParts || '');
+                            }}
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-semibold text-[11px] transition-all"
+                          >
+                            {t('Complete Order')}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -139,57 +147,26 @@ export const MaintenanceModule: React.FC = () => {
         </div>
       </div>
 
-      {/* Create Order Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('Create Service Repair Order')}>
-        <form onSubmit={handleSubmitCreate} className="space-y-4 text-xs">
-          <div>
-            <label className={labelClass}>{t('Select Asset Equipment')}</label>
-            <select
-              value={selectedAssetId}
-              onChange={(e) => setSelectedAssetId(e.target.value)}
-              className={inputClass}
-            >
-              {serviceableAssets.map((a) => (
-                <option key={a.id} value={a.id}>{a.name} ({a.assetNumber}) - {t(a.status)}</option>
-              ))}
-            </select>
-          </div>
+      {/* Create New Service Order Modal */}
+      <CreateServiceOrderModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+      />
 
-          <div>
-            <label className={labelClass}>{t('Service Supplier Repair Vendor')}</label>
-            <select
-              value={selectedSupplierId}
-              onChange={(e) => setSelectedSupplierId(e.target.value)}
-              className={inputClass}
-            >
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.companyName} ({s.services})</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className={labelClass}>{t('Detailed Problem Breakdown Description')}</label>
-            <textarea
-              rows={3}
-              required
-              placeholder={t("Describe malfunction, broken parts, or preventative oil change required...")}
-              value={problemDescription}
-              onChange={(e) => setProblemDescription(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-surface-100">
-            <button type="button" onClick={() => setIsModalOpen(false)} className="btn-ghost">
-              {t('Cancel')}
-            </button>
-            <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-semibold shadow-sm">
-              {t('Dispatch Service Order')}
-            </button>
-          </div>
-        </form>
-      </Modal>
+      {/* Dispatch Pending Service Order Modal */}
+      {dispatchModalOrderId && (
+        <CreateServiceOrderModal
+          isOpen={!!dispatchModalOrderId}
+          onClose={() => {
+            setDispatchModalOrderId(null);
+            setDispatchModalAssetId(undefined);
+            setDispatchModalDesc(undefined);
+          }}
+          existingServiceOrderId={dispatchModalOrderId}
+          preselectedAssetId={dispatchModalAssetId}
+          preselectedDescription={dispatchModalDesc}
+        />
+      )}
 
       {/* Complete Order Modal */}
       <Modal isOpen={!!completeModalId} onClose={() => setCompleteModalId(null)} title={t('Mark Service Order as Completed')}>

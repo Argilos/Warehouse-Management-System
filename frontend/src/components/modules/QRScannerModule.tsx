@@ -5,6 +5,7 @@ import { useLanguageStore } from '../../store/useLanguageStore';
 import { Modal } from '../common/Modal';
 import { Asset, ToolBox, OtpremnicaDocument } from '../../types';
 import { OtpremnicaModal } from './OtpremnicaModal';
+import { CreateServiceOrderModal } from './CreateServiceOrderModal';
 import {
   QrCode, Camera, ArrowLeftRight, Wrench, ShieldAlert,
   CheckCircle2, ArrowRight, RefreshCw, Sparkles, User, FolderOpen, Box, Trash2, Package
@@ -23,6 +24,12 @@ export const QRScannerModule: React.FC = () => {
   const [isScanningCamera, setIsScanningCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
+  // Auto-opened Service Repair Order Modal state on damaged return or damage report
+  const [isServiceOrderModalOpen, setIsServiceOrderModalOpen] = useState(false);
+  const [serviceOrderAssetId, setServiceOrderAssetId] = useState<string | undefined>(undefined);
+  const [serviceOrderDesc, setServiceOrderDesc] = useState<string | undefined>(undefined);
+  const [serviceOrderId, setServiceOrderId] = useState<string | undefined>(undefined);
 
   // Otpremnica Modal state
   const [otpremnicaModalOpen, setOtpremnicaModalOpen] = useState(false);
@@ -108,7 +115,7 @@ export const QRScannerModule: React.FC = () => {
     if (!matchedAsset) return;
     setIsSubmitting(true);
     try {
-      await returnAsset(
+      const res = await returnAsset(
         matchedAsset.id,
         returnCondition,
         returnNotes || t('Returned via mobile QR scan action')
@@ -117,6 +124,13 @@ export const QRScannerModule: React.FC = () => {
       setActionSuccessMsg(`✓ ${matchedAsset.name} ${t('successfully returned to warehouse.')}`);
       setMatchedAsset({ ...matchedAsset, status: newStatus, holderEmployeeId: undefined, holderEmployeeName: undefined });
       setIsReturnModalOpen(false);
+
+      if (returnCondition === 'DAMAGED') {
+        setServiceOrderAssetId(matchedAsset.id);
+        setServiceOrderDesc(returnNotes ? `Auto-triggered from damaged tool return: ${returnNotes}` : t('Equipment returned in damaged condition requiring service repair.'));
+        setServiceOrderId(res?.serviceOrder?.id);
+        setIsServiceOrderModalOpen(true);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -125,12 +139,10 @@ export const QRScannerModule: React.FC = () => {
   };
 
   const handleReportDamage = (ast: Asset) => {
-    const desc = prompt(t('Describe tool damage or malfunction:'), t('Broken housing / erratic motor output'));
-    if (desc) {
-      createServiceOrder(ast.id, ast.supplierId || '', desc);
-      setActionSuccessMsg(`✓ ${t('Damage reported. Service Order created for')} ${ast.name}.`);
-      setMatchedAsset({ ...ast, status: 'IN_SERVICE' });
-    }
+    setServiceOrderAssetId(ast.id);
+    setServiceOrderDesc(t('Reported damaged via QR asset inspection'));
+    setServiceOrderId(undefined);
+    setIsServiceOrderModalOpen(true);
   };
 
   const handleOpenCheckoutModal = () => {
@@ -663,6 +675,25 @@ export const QRScannerModule: React.FC = () => {
         isOpen={otpremnicaModalOpen}
         onClose={() => setOtpremnicaModalOpen(false)}
         otpremnica={currentOtpremnica}
+      />
+
+      {/* Auto-Opened Service Repair Order Modal */}
+      <CreateServiceOrderModal
+        isOpen={isServiceOrderModalOpen}
+        onClose={() => {
+          setIsServiceOrderModalOpen(false);
+          setServiceOrderAssetId(undefined);
+          setServiceOrderDesc(undefined);
+          setServiceOrderId(undefined);
+        }}
+        preselectedAssetId={serviceOrderAssetId}
+        preselectedDescription={serviceOrderDesc}
+        existingServiceOrderId={serviceOrderId}
+        onSuccess={() => {
+          if (serviceOrderAssetId && matchedAsset?.id === serviceOrderAssetId) {
+            setMatchedAsset({ ...matchedAsset, status: 'IN_SERVICE' });
+          }
+        }}
       />
 
     </div>

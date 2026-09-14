@@ -8,6 +8,7 @@ import {
 import { ToolBox } from '../../types';
 
 import { OtpremnicaModal } from './OtpremnicaModal';
+import { CreateServiceOrderModal } from './CreateServiceOrderModal';
 import { OtpremnicaDocument } from '../../types';
 
 export const ToolIssuingModule: React.FC = () => {
@@ -22,6 +23,12 @@ export const ToolIssuingModule: React.FC = () => {
 
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+
+  // Auto-opened Service Repair Order Modal state on damaged return
+  const [isServiceOrderModalOpen, setIsServiceOrderModalOpen] = useState(false);
+  const [serviceOrderAssetId, setServiceOrderAssetId] = useState<string | undefined>(undefined);
+  const [serviceOrderDesc, setServiceOrderDesc] = useState<string | undefined>(undefined);
+  const [serviceOrderId, setServiceOrderId] = useState<string | undefined>(undefined);
 
   // Form States
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
@@ -100,14 +107,30 @@ export const ToolIssuingModule: React.FC = () => {
     }
   };
 
-  const handleConfirmReturn = (e: React.FormEvent) => {
+  const handleConfirmReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAssetForReturn) return;
 
-    returnAsset(selectedAssetForReturn, returnCondition, returnNotes);
-    setIsReturnModalOpen(false);
-    setSelectedAssetForReturn('');
-    setReturnNotes('');
+    const astId = selectedAssetForReturn;
+    const cond = returnCondition;
+    const notes = returnNotes;
+
+    try {
+      const res = await returnAsset(astId, cond, notes);
+      setIsReturnModalOpen(false);
+      setSelectedAssetForReturn('');
+      setReturnNotes('');
+
+      // If marked as DAMAGED, automatically open and pre-fill the Create Service Repair Order modal
+      if (cond === 'DAMAGED') {
+        setServiceOrderAssetId(astId);
+        setServiceOrderDesc(notes ? `Auto-triggered from damaged tool return: ${notes}` : t('Equipment returned in damaged condition requiring service repair.'));
+        setServiceOrderId(res?.serviceOrder?.id);
+        setIsServiceOrderModalOpen(true);
+      }
+    } catch (err: any) {
+      alert(err.message || t('Failed to process return'));
+    }
   };
 
   const handleConfirmIssueToolBox = async (e: React.FormEvent) => {
@@ -684,6 +707,20 @@ export const ToolIssuingModule: React.FC = () => {
         isOpen={otpremnicaModalOpen}
         onClose={() => setOtpremnicaModalOpen(false)}
         otpremnica={currentOtpremnica}
+      />
+
+      {/* Auto-Opened Service Repair Order Modal on Damaged Return */}
+      <CreateServiceOrderModal
+        isOpen={isServiceOrderModalOpen}
+        onClose={() => {
+          setIsServiceOrderModalOpen(false);
+          setServiceOrderAssetId(undefined);
+          setServiceOrderDesc(undefined);
+          setServiceOrderId(undefined);
+        }}
+        preselectedAssetId={serviceOrderAssetId}
+        preselectedDescription={serviceOrderDesc}
+        existingServiceOrderId={serviceOrderId}
       />
 
     </div>
