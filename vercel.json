@@ -1,10 +1,11 @@
 {
   "version": 2,
-  "buildCommand": "npx -y prisma@5.22.0 generate --schema ./prisma/schema.prisma && cd frontend && npm install && npm run build",
+  "installCommand": "cd frontend && npm install",
+  "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
