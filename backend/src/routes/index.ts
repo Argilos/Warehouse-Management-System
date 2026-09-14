@@ -13,6 +13,191 @@ const router = Router();
 // Helper to format dates cleanly or fallback
 const parseDate = (d?: string | Date) => (d ? new Date(d) : new Date());
 
+interface ToolboxKitInfo {
+  id: string;
+  boxNumber: string;
+  name: string;
+  toolCount: number;
+}
+
+export function formatOtpremnicaItems(doc: any, trxById: Map<string, any>, transactionsRawFallback?: any[]) {
+  const items: any[] = [];
+
+  // Check if doc was a toolbox kit issuance
+  if (doc.notes && doc.notes.includes('[TOOLBOX KIT:')) {
+    const kitMatch = doc.notes.match(/\[TOOLBOX KIT:\s*([^\s-]+)\s*-\s*([^\]]+)\]/);
+    if (kitMatch) {
+      const boxNum = kitMatch[1].trim();
+      const boxName = kitMatch[2].trim();
+      items.push({
+        assetId: `kit-${doc.id}`,
+        assetNumber: boxNum,
+        assetName: `[KIT] ${boxName}`,
+        serialNumber: boxNum,
+        category: 'ToolBox Kit',
+        status: 'ASSIGNED',
+        quantity: 1,
+        notes: `Master Tool Box Kit`,
+      });
+    }
+  }
+
+  let toolItems: any[] = [];
+  if (doc.transactionIds && doc.transactionIds.length > 0) {
+    toolItems = doc.transactionIds
+      .map((tid: string) => trxById.get(tid))
+      .filter((t: any) => t && t.asset)
+      .map((t: any) => ({
+        assetId: t.asset.id,
+        assetNumber: t.asset.assetNumber,
+        assetName: t.asset.name,
+        serialNumber: t.asset.serialNumber,
+        category: t.asset.category,
+        status: t.asset.status,
+        quantity: 1,
+        notes: t.notes || undefined,
+      }));
+  }
+
+  // Fallback for legacy documents where transactionIds were not recorded
+  if (toolItems.length === 0 && doc.employeeId && transactionsRawFallback) {
+    const docDate = doc.issueDate ? new Date(doc.issueDate).toISOString().slice(0, 10) : '';
+    toolItems = transactionsRawFallback
+      .filter((t: any) =>
+        t.employeeId === doc.employeeId &&
+        t.transactionType === 'ISSUE' &&
+        t.asset &&
+        (!docDate || (t.transactionDate && new Date(t.transactionDate).toISOString().slice(0, 10) === docDate))
+      )
+      .map((t: any) => ({
+        assetId: t.asset.id,
+        assetNumber: t.asset.assetNumber,
+        assetName: t.asset.name,
+        serialNumber: t.asset.serialNumber,
+        category: t.asset.category,
+        status: t.asset.status,
+        quantity: 1,
+        notes: t.notes || undefined,
+      }));
+  }
+
+  items.push(...toolItems);
+  return items;
+}
+
+export async function createOtpremnicaDocumentHelper({
+  employeeId,
+  projectId,
+  transactionIds,
+  notes,
+  createdById,
+  toolboxKitInfo,
+}: {
+  employeeId: string;
+  projectId?: string;
+  transactionIds: string[];
+  notes?: string;
+  createdById?: string;
+  toolboxKitInfo?: ToolboxKitInfo;
+}) {
+  let user = createdById ? await prisma.user.findUnique({ where: { id: createdById } }) : await prisma.user.findFirst();
+  if (!user) {
+    user = await prisma.user.create({
+      data: { email: 'admin@warehouse.com', firstName: 'System', lastName: 'Admin', role: 'ADMIN' },
+    });
+  }
+
+  const currentYear = new Date().getFullYear();
+  const count = await prisma.otpremnicaDocument.count();
+  const seqNum = String(count + 1).padStart(4, '0');
+  const documentNumber = `OTP-${currentYear}-${seqNum}`;
+
+  let docNotes = notes || null;
+  if (toolboxKitInfo) {
+    const kitPrefix = `[TOOLBOX KIT: ${toolboxKitInfo.boxNumber} - ${toolboxKitInfo.name}]`;
+    docNotes = docNotes ? `${kitPrefix} ${docNotes}` : kitPrefix;
+  }
+
+  const doc = await prisma.otpremnicaDocument.create({
+    data: {
+      documentNumber,
+      employeeId,
+      projectId: projectId || null,
+      createdById: user.id,
+      issueDate: new Date(),
+      notes: docNotes,
+      transactionIds: transactionIds || [],
+    },
+    include: { employee: true, project: true, createdBy: true },
+  });
+
+  const transactions = (transactionIds && transactionIds.length > 0) ? await prisma.assetTransaction.findMany({
+    where: { id: { in: transactionIds } },
+    include: { asset: true },
+  }) : [];
+
+  const items: any[] = [];
+
+  if (toolboxKitInfo) {
+    items.push({
+      assetId: toolboxKitInfo.id,
+      assetNumber: toolboxKitInfo.boxNumber,
+      assetName: `[KIT] ${toolboxKitInfo.name}`,
+      serialNumber: toolboxKitInfo.boxNumber,
+      category: 'ToolBox Kit',
+      status: 'ASSIGNED',
+      quantity: 1,
+      isKitHeader: true,
+      notes: `Tool Box Kit with ${toolboxKitInfo.toolCount} component tools`,
+    });
+  }
+
+  transactions.forEach((t: any) => {
+    if (t.asset) {
+      items.push({
+        assetId: t.asset.id,
+        assetNumber: t.asset.assetNumber,
+        assetName: t.asset.name,
+        serialNumber: t.asset.serialNumber,
+        category: t.asset.category,
+        status: t.asset.status,
+        quantity: 1,
+        notes: t.notes || undefined,
+      });
+    }
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: user.id,
+      entity: 'OtpremnicaDocument',
+      entityId: doc.id,
+      action: 'OTPREMNICA_GENERATED',
+      newValues: { documentNumber, employeeId, projectId, transactionCount: transactionIds.length },
+    },
+  });
+
+  return {
+    id: doc.id,
+    documentNumber: doc.documentNumber,
+    employeeId: doc.employeeId,
+    employeeName: doc.employee ? `${doc.employee.firstName} ${doc.employee.lastName}` : undefined,
+    employeeNumber: doc.employee?.employeeNumber || undefined,
+    employeeDepartment: doc.employee?.department || undefined,
+    projectId: doc.projectId || undefined,
+    projectName: doc.project?.name || undefined,
+    projectCode: doc.project?.projectCode || undefined,
+    createdById: doc.createdById,
+    createdByName: doc.createdBy ? `${doc.createdBy.firstName} ${doc.createdBy.lastName}` : undefined,
+    issueDate: doc.issueDate ? (doc.issueDate instanceof Date ? doc.issueDate.toISOString().slice(0, 10) : new Date(doc.issueDate).toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10),
+    notes: doc.notes || undefined,
+    transactionIds: doc.transactionIds || [],
+    items,
+    createdAt: doc.createdAt ? (doc.createdAt instanceof Date ? doc.createdAt.toISOString() : new Date(doc.createdAt).toISOString()) : new Date().toISOString(),
+  };
+}
+
+
 // ─── INITIAL HYDRATION / DASHBOARD ───────────────────────────────────────────
 router.get('/initial-data', async (req: Request, res: Response) => {
   try {
@@ -534,44 +719,7 @@ router.get('/initial-data', async (req: Request, res: Response) => {
     });
 
     const formattedOtpremnicaDocs = (otpremnicaDocsRaw || []).map((doc: any) => {
-      let docItems: any[] = [];
-      if (doc.transactionIds && doc.transactionIds.length > 0) {
-        docItems = doc.transactionIds
-          .map((tid: string) => trxById.get(tid))
-          .filter((t: any) => t && t.asset)
-          .map((t: any) => ({
-            assetId: t.asset.id,
-            assetNumber: t.asset.assetNumber,
-            assetName: t.asset.name,
-            serialNumber: t.asset.serialNumber,
-            category: t.asset.category,
-            status: t.asset.status,
-            quantity: 1,
-            notes: t.notes || undefined,
-          }));
-      }
-
-      // Fallback for legacy documents where transactionIds were not recorded
-      if (docItems.length === 0 && doc.employeeId) {
-        const docDate = doc.issueDate ? new Date(doc.issueDate).toISOString().slice(0, 10) : '';
-        docItems = (transactionsRaw || [])
-          .filter((t: any) =>
-            t.employeeId === doc.employeeId &&
-            t.transactionType === 'ISSUE' &&
-            t.asset &&
-            (!docDate || t.transactionDate.toISOString().slice(0, 10) === docDate)
-          )
-          .map((t: any) => ({
-            assetId: t.asset.id,
-            assetNumber: t.asset.assetNumber,
-            assetName: t.asset.name,
-            serialNumber: t.asset.serialNumber,
-            category: t.asset.category,
-            status: t.asset.status,
-            quantity: 1,
-            notes: t.notes || undefined,
-          }));
-      }
+      const items = formatOtpremnicaItems(doc, trxById, transactionsRaw);
 
       return {
         id: doc.id,
@@ -588,7 +736,7 @@ router.get('/initial-data', async (req: Request, res: Response) => {
         issueDate: doc.issueDate.toISOString().slice(0, 10),
         notes: doc.notes || undefined,
         transactionIds: doc.transactionIds || [],
-        items: docItems,
+        items,
         createdAt: doc.createdAt.toISOString(),
       };
     });
@@ -815,7 +963,22 @@ router.post('/transactions/issue', async (req: Request, res: Response) => {
       createdTransactions.push(trx);
     }
 
-    res.status(201).json(createdTransactions);
+    // Automatically generate Otpremnica Delivery Note for this issuance
+    let otpremnicaDoc: any = null;
+    if (employeeId && createdTransactions.length > 0) {
+      otpremnicaDoc = await createOtpremnicaDocumentHelper({
+        employeeId,
+        projectId: projectId || undefined,
+        transactionIds: createdTransactions.map((t: any) => t.id),
+        notes,
+        createdById: user.id,
+      });
+    }
+
+    res.status(201).json({
+      transactions: createdTransactions,
+      otpremnica: otpremnicaDoc,
+    });
   } catch (error) {
     console.error('Error issuing assets:', error);
     res.status(500).json({ error: 'Failed to issue assets' });
@@ -841,7 +1004,18 @@ router.post('/transactions/return', async (req: Request, res: Response) => {
       }
     }
 
-    const newStatus = condition === 'DAMAGED' ? 'DAMAGED' : 'AVAILABLE';
+    const targetAsset = await prisma.asset.findUnique({ where: { id: assetId } });
+    if (!targetAsset) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+
+    // Determine target status: DAMAGED, LOST, or AVAILABLE
+    let newStatus: 'AVAILABLE' | 'DAMAGED' | 'LOST' = 'AVAILABLE';
+    if (condition === 'DAMAGED') {
+      newStatus = 'DAMAGED';
+    } else if (condition === 'LOST') {
+      newStatus = 'LOST';
+    }
 
     const activeAssignment = await prisma.employeeAsset.findFirst({
       where: { assetId, returnedDate: null },
@@ -859,6 +1033,13 @@ router.post('/transactions/return', async (req: Request, res: Response) => {
       data: { status: newStatus },
     });
 
+    let returnTrxNotes = notes || `Condition on return: ${condition}`;
+    if (condition === 'LOST') {
+      returnTrxNotes = notes ? `[MARKED LOST ON RETURN] ${notes}` : 'Equipment reported lost/missing during return inspection.';
+    } else if (condition === 'DAMAGED') {
+      returnTrxNotes = notes ? `[RETURNED DAMAGED] ${notes}` : 'Equipment returned in damaged condition requiring service repair.';
+    }
+
     const trx = await prisma.assetTransaction.create({
       data: {
         assetId,
@@ -866,12 +1047,89 @@ router.post('/transactions/return', async (req: Request, res: Response) => {
         transactionType: 'RETURN',
         transactionDate: new Date(),
         performedById: user.id,
-        notes: notes || `Condition on return: ${condition}`,
+        notes: returnTrxNotes,
       },
       include: { asset: true, employee: true, performedBy: true },
     });
 
-    res.status(201).json(trx);
+    // Atomically create reactive maintenance service order and maintenance task if DAMAGED
+    let autoServiceOrder: any = null;
+    let autoMaintenanceTask: any = null;
+
+    if (newStatus === 'DAMAGED') {
+      autoServiceOrder = await prisma.serviceOrder.create({
+        data: {
+          assetId,
+          problemDescription: `Auto-generated reactive service order from damaged tool return (Return Trx ID: ${trx.id}). Notes: ${notes || 'Returned in damaged condition.'}`,
+          status: 'PENDING',
+          sentDate: new Date(),
+        },
+        include: { asset: true },
+      });
+
+      const now = new Date();
+      const randNum = Math.floor(100 + Math.random() * 900);
+      const taskNumber = `RM-${now.getFullYear()}-${randNum}`;
+      autoMaintenanceTask = await prisma.maintenanceTask.create({
+        data: {
+          taskNumber,
+          assetId,
+          title: `Reactive Maintenance: Damaged Return - ${targetAsset.name} (${targetAsset.assetNumber})`,
+          type: 'REACTIVE',
+          priority: 'HIGH',
+          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          status: 'PENDING',
+          notes: `Auto-generated reactive repair task from damaged tool return (Return Trx ID: ${trx.id}). Inspection remarks: ${notes || 'Tool returned damaged.'}`,
+        },
+        include: { asset: true },
+      });
+
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'SERVICE',
+          title: `Equipment Returned Damaged: ${targetAsset.name}`,
+          message: `${targetAsset.name} (${targetAsset.assetNumber}) was returned damaged. Reactive Service Order & Maintenance Task automatically logged.`,
+          isRead: false,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          entity: 'ServiceOrder',
+          entityId: autoServiceOrder.id,
+          action: 'REACTIVE_SERVICE_ORDER_AUTO_CREATED_ON_RETURN',
+          newValues: { assetId, returnTransactionId: trx.id, taskNumber },
+        },
+      });
+    } else if (newStatus === 'LOST') {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'OVERDUE',
+          title: `Equipment Reported Lost on Return: ${targetAsset.name}`,
+          message: `${targetAsset.name} (${targetAsset.assetNumber}) was reported lost/missing during equipment return. Asset value written off.`,
+          isRead: false,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          entity: 'Asset',
+          entityId: assetId,
+          action: 'ASSET_MARKED_LOST_ON_RETURN',
+          newValues: { assetId, returnTransactionId: trx.id, previousStatus: targetAsset.status },
+        },
+      });
+    }
+
+    res.status(201).json({
+      ...trx,
+      serviceOrder: autoServiceOrder,
+      maintenanceTask: autoMaintenanceTask,
+    });
   } catch (error) {
     console.error('Error returning asset:', error);
     res.status(500).json({ error: 'Failed to return asset' });
@@ -1119,7 +1377,7 @@ router.post('/toolboxes/:id/items', async (req: Request, res: Response) => {
 
 router.post('/toolboxes/issue', async (req: Request, res: Response) => {
   try {
-    const { boxId, employeeId, notes } = req.body;
+    const { boxId, employeeId, projectId, expectedReturnDate, notes, performedById } = req.body;
 
     const box = await prisma.toolBox.findUnique({
       where: { id: boxId },
@@ -1141,7 +1399,22 @@ router.post('/toolboxes/issue', async (req: Request, res: Response) => {
       }
     }
 
-    await prisma.toolBox.update({
+    let user = performedById ? await prisma.user.findUnique({ where: { id: performedById } }) : null;
+    if (!user) {
+      user = await prisma.user.findFirst();
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            email: 'admin@warehouse.com',
+            firstName: 'System',
+            lastName: 'Admin',
+            role: 'ADMIN',
+          },
+        });
+      }
+    }
+
+    const updatedBox = await prisma.toolBox.update({
       where: { id: boxId },
       data: {
         status: 'ASSIGNED',
@@ -1151,13 +1424,21 @@ router.post('/toolboxes/issue', async (req: Request, res: Response) => {
     });
 
     const assetIds = box.items.map((i) => i.assetId);
+    const createdTrxs: any[] = [];
+
     if (assetIds.length > 0) {
       await prisma.asset.updateMany({
         where: { id: { in: assetIds } },
         data: { status: 'ISSUED' },
       });
 
-      for (const assetId of assetIds) {
+      for (const item of box.items) {
+        const assetId = item.assetId;
+        await prisma.employeeAsset.updateMany({
+          where: { assetId, returnedDate: null },
+          data: { returnedDate: new Date() },
+        });
+
         await prisma.employeeAsset.create({
           data: {
             employeeId,
@@ -1165,13 +1446,51 @@ router.post('/toolboxes/issue', async (req: Request, res: Response) => {
             assignmentType: 'TOOLBOX_KIT',
             assignedDate: new Date(),
             condition: 'EXCELLENT',
-            notes: notes || `Issued in Tool Box ${box.boxNumber}`,
+            notes: notes ? `Issued in Tool Box ${box.name} (${box.boxNumber}) - ${notes}` : `Issued in Tool Box ${box.name} (${box.boxNumber})`,
           },
         });
+
+        const trx = await prisma.assetTransaction.create({
+          data: {
+            assetId,
+            employeeId: employeeId || null,
+            projectId: projectId || null,
+            transactionType: 'ISSUE',
+            transactionDate: new Date(),
+            returnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
+            performedById: user.id,
+            notes: notes ? `Issued in Tool Box Kit: ${box.name} (${box.boxNumber}) - ${notes}` : `Issued in Tool Box Kit: ${box.name} (${box.boxNumber})`,
+          },
+          include: { asset: true, employee: true, project: true, performedBy: true },
+        });
+        createdTrxs.push(trx);
       }
     }
 
-    res.json({ message: 'ToolBox issued successfully' });
+    // Auto-generate Otpremnica Document for this toolbox issuance
+    let otpremnicaDoc: any = null;
+    if (employeeId) {
+      otpremnicaDoc = await createOtpremnicaDocumentHelper({
+        employeeId,
+        projectId: projectId || undefined,
+        transactionIds: createdTrxs.map(t => t.id),
+        notes,
+        createdById: user.id,
+        toolboxKitInfo: {
+          id: box.id,
+          boxNumber: box.boxNumber,
+          name: box.name,
+          toolCount: box.items.length,
+        },
+      });
+    }
+
+    res.json({
+      message: 'ToolBox issued successfully',
+      toolBox: updatedBox,
+      transactions: createdTrxs,
+      otpremnica: otpremnicaDoc,
+    });
   } catch (error) {
     console.error('Error issuing toolbox:', error);
     res.status(500).json({ error: 'Failed to issue toolbox' });
@@ -1238,12 +1557,12 @@ router.post('/toolboxes/:id/dismantle', async (req: Request, res: Response) => {
       where: { toolBoxId: id },
     });
 
-    // Mark contained assets AVAILABLE (unless LOST or RETIRED)
+    // Mark contained assets AVAILABLE (unless LOST, RETIRED, or DAMAGED)
     if (assetIds.length > 0) {
       await prisma.asset.updateMany({
         where: {
           id: { in: assetIds },
-          status: { notIn: ['LOST', 'RETIRED'] },
+          status: { notIn: ['LOST', 'RETIRED', 'DAMAGED'] },
         },
         data: { status: 'AVAILABLE' },
       });
@@ -2065,23 +2384,18 @@ router.get('/otpremnica', async (req: Request, res: Response) => {
       include: { asset: true },
     }) : [];
 
+    // Fallback transactions for legacy documents
+    const needsFallback = docs.some(d => !d.transactionIds || d.transactionIds.length === 0);
+    const fallbackTransactions = needsFallback ? await prisma.assetTransaction.findMany({
+      where: { transactionType: 'ISSUE' },
+      include: { asset: true },
+    }) : [];
+
     const trxById = new Map<string, any>();
     transactions.forEach((t: any) => trxById.set(t.id, t));
 
     const formattedDocs = docs.map((doc: any) => {
-      const items = (doc.transactionIds || [])
-        .map((tid: string) => trxById.get(tid))
-        .filter((t: any) => t && t.asset)
-        .map((t: any) => ({
-          assetId: t.asset.id,
-          assetNumber: t.asset.assetNumber,
-          assetName: t.asset.name,
-          serialNumber: t.asset.serialNumber,
-          category: t.asset.category,
-          status: t.asset.status,
-          quantity: 1,
-          notes: t.notes || undefined,
-        }));
+      const items = formatOtpremnicaItems(doc, trxById, fallbackTransactions);
 
       return {
         id: doc.id,
@@ -2113,18 +2427,6 @@ router.post('/otpremnica/generate', async (req: Request, res: Response) => {
   try {
     const { employeeId, projectId, transactionIds, notes, createdById } = req.body;
 
-    let user = createdById ? await prisma.user.findUnique({ where: { id: createdById } }) : await prisma.user.findFirst();
-    if (!user) {
-      user = await prisma.user.create({
-        data: { email: 'admin@warehouse.com', firstName: 'System', lastName: 'Admin', role: 'ADMIN' },
-      });
-    }
-
-    const currentYear = new Date().getFullYear();
-    const count = await prisma.otpremnicaDocument.count();
-    const seqNum = String(count + 1).padStart(4, '0');
-    const documentNumber = `OTP-${currentYear}-${seqNum}`;
-
     // If transactionIds was empty, automatically find the latest unassigned ISSUE transactions for this employee
     let effectiveTransactionIds = (transactionIds || []) as string[];
     if (effectiveTransactionIds.length === 0 && employeeId) {
@@ -2139,64 +2441,15 @@ router.post('/otpremnica/generate', async (req: Request, res: Response) => {
       effectiveTransactionIds = recentTrxs.map(t => t.id);
     }
 
-    const doc = await prisma.otpremnicaDocument.create({
-      data: {
-        documentNumber,
-        employeeId,
-        projectId: projectId || null,
-        createdById: user.id,
-        issueDate: new Date(),
-        notes: notes || null,
-        transactionIds: effectiveTransactionIds,
-      },
-      include: { employee: true, project: true, createdBy: true },
+    const doc = await createOtpremnicaDocumentHelper({
+      employeeId,
+      projectId,
+      transactionIds: effectiveTransactionIds,
+      notes,
+      createdById,
     });
 
-    // Query linked transactions with their assets to format items
-    const transactions = effectiveTransactionIds.length > 0 ? await prisma.assetTransaction.findMany({
-      where: { id: { in: effectiveTransactionIds } },
-      include: { asset: true },
-    }) : [];
-
-    const items = transactions.map((t: any) => ({
-      assetId: t.asset.id,
-      assetNumber: t.asset.assetNumber,
-      assetName: t.asset.name,
-      serialNumber: t.asset.serialNumber,
-      category: t.asset.category,
-      status: t.asset.status,
-      quantity: 1,
-      notes: t.notes || undefined,
-    }));
-
-    await prisma.auditLog.create({
-      data: {
-        userId: user.id,
-        entity: 'OtpremnicaDocument',
-        entityId: doc.id,
-        action: 'OTPREMNICA_GENERATED',
-        newValues: { documentNumber, employeeId, projectId, transactionCount: effectiveTransactionIds.length },
-      },
-    });
-
-    res.status(201).json({
-      id: doc.id,
-      documentNumber: doc.documentNumber,
-      employeeId: doc.employeeId,
-      employeeName: doc.employee ? `${doc.employee.firstName} ${doc.employee.lastName}` : undefined,
-      employeeNumber: doc.employee?.employeeNumber || undefined,
-      employeeDepartment: doc.employee?.department || undefined,
-      projectId: doc.projectId || undefined,
-      projectName: doc.project?.name || undefined,
-      projectCode: doc.project?.projectCode || undefined,
-      createdById: doc.createdById,
-      createdByName: doc.createdBy ? `${doc.createdBy.firstName} ${doc.createdBy.lastName}` : undefined,
-      issueDate: doc.issueDate.toISOString().slice(0, 10),
-      notes: doc.notes || undefined,
-      transactionIds: doc.transactionIds || [],
-      items,
-      createdAt: doc.createdAt.toISOString(),
-    });
+    res.status(201).json(doc);
   } catch (error: any) {
     console.error('Error generating Otpremnica:', error);
     res.status(500).json({ error: error.message || 'Failed to generate Otpremnica document' });

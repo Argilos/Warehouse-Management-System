@@ -9,7 +9,8 @@ import { OtpremnicaModal } from './OtpremnicaModal';
 import {
   FileText, Download, Printer, Filter, RotateCcw, Search,
   Calendar, User, FolderKanban, Tag, ShieldAlert, CheckCircle2,
-  Wrench, Gauge, PackageCheck, Layers, FileSpreadsheet, Eye, Sparkles
+  Wrench, Gauge, PackageCheck, Layers, FileSpreadsheet, Eye, Sparkles,
+  ChevronDown, ChevronRight, Box
 } from 'lucide-react';
 
 export const ReportsModule: React.FC = () => {
@@ -39,6 +40,19 @@ export const ReportsModule: React.FC = () => {
   // Selected Otpremnica for modal viewing
   const [selectedOtpremnica, setSelectedOtpremnica] = useState<OtpremnicaDocument | null>(null);
   const [isOtpremnicaOpen, setIsOtpremnicaOpen] = useState(false);
+  const [expandedDocIds, setExpandedDocIds] = useState<Set<string>>(new Set());
+
+  const toggleDocExpanded = (docId: string) => {
+    setExpandedDocIds(prev => {
+      const next = new Set(prev);
+      if (next.has(docId)) {
+        next.delete(docId);
+      } else {
+        next.add(docId);
+      }
+      return next;
+    });
+  };
 
   // Categories & Manufacturers Options
   const categories = useMemo(() => Array.from(new Set(assets.map(a => a.category))), [assets]);
@@ -543,54 +557,163 @@ export const ReportsModule: React.FC = () => {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-surface-50 border-b border-surface-200 text-[11px] uppercase tracking-wider text-slate-400">
-                    <th className="px-4 py-3 font-semibold">{t('Document No.')}</th>
-                    <th className="px-4 py-3 font-semibold">{t('Date')}</th>
-                    <th className="px-4 py-3 font-semibold">{t('Employee')}</th>
-                    <th className="px-4 py-3 font-semibold">{t('Department')}</th>
-                    <th className="px-4 py-3 font-semibold">{t('Project')}</th>
-                    <th className="px-4 py-3 font-semibold">{t('Issued By')}</th>
-                    <th className="px-4 py-3 text-right font-semibold">{t('Action')}</th>
+                    <th className="px-3 py-3 w-8"></th>
+                    <th className="px-3 py-3 font-semibold">{t('Document No.')}</th>
+                    <th className="px-3 py-3 font-semibold">{t('Date')}</th>
+                    <th className="px-3 py-3 font-semibold">{t('Employee')}</th>
+                    <th className="px-3 py-3 font-semibold">{t('Project')}</th>
+                    <th className="px-3 py-3 font-semibold">{t('Assigned Equipment & Tools')}</th>
+                    <th className="px-3 py-3 font-semibold">{t('Issued By')}</th>
+                    <th className="px-3 py-3 text-right font-semibold">{t('Action')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-100 text-slate-700">
                   {otpremnicaDocuments.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                         {t('No Otpremnica handover receipts generated yet.')}
                       </td>
                     </tr>
                   ) : (
-                    otpremnicaDocuments.map((doc) => (
-                      <tr key={doc.id} className="hover:bg-surface-50 transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-brand-600">{doc.documentNumber}</td>
-                        <td className="px-4 py-3 text-slate-500">{doc.issueDate}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-800">{doc.employeeName || 'N/A'}</td>
-                        <td className="px-4 py-3 text-slate-500">{doc.employeeDepartment || 'Field Ops'}</td>
-                        <td className="px-4 py-3 text-slate-600">{doc.projectName || t('General Issue')}</td>
-                        <td className="px-4 py-3 text-slate-500">{doc.createdByName || 'Warehouse Manager'}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setSelectedOtpremnica(doc);
-                                setIsOtpremnicaOpen(true);
-                              }}
-                              className="px-2.5 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded border border-brand-100 text-[11px] font-medium flex items-center gap-1"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>{t('View & Print')}</span>
-                            </button>
-                            <button
-                              onClick={() => exportOtpremnicaPDF(doc)}
-                              className="p-1 bg-surface-100 hover:bg-surface-200 text-slate-600 rounded border border-surface-200"
-                              title={t('Download PDF')}
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    otpremnicaDocuments.map((doc) => {
+                      const isExpanded = expandedDocIds.has(doc.id);
+                      const items = doc.items || [];
+
+                      return (
+                        <React.Fragment key={doc.id}>
+                          <tr className="hover:bg-surface-50 transition-colors">
+                            <td className="px-3 py-3 text-center">
+                              <button
+                                onClick={() => toggleDocExpanded(doc.id)}
+                                className="p-1 hover:bg-surface-200 rounded text-slate-400 hover:text-slate-600 transition-colors"
+                                title={isExpanded ? t('Collapse tool details') : t('Expand tool details')}
+                              >
+                                {isExpanded ? <ChevronDown className="w-4 h-4 text-brand-600" /> : <ChevronRight className="w-4 h-4" />}
+                              </button>
+                            </td>
+                            <td className="px-3 py-3 font-mono font-bold text-brand-600">
+                              <span className="cursor-pointer hover:underline" onClick={() => toggleDocExpanded(doc.id)}>
+                                {doc.documentNumber}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{doc.issueDate}</td>
+                            <td className="px-3 py-3">
+                              <div className="font-semibold text-slate-800">{doc.employeeName || 'N/A'}</div>
+                              <div className="text-[10px] text-slate-400">{doc.employeeDepartment || 'Field Ops'}</div>
+                            </td>
+                            <td className="px-3 py-3 text-slate-600">{doc.projectName || t('General Issue')}</td>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap items-center gap-1.5 max-w-xs">
+                                <span className="px-2 py-0.5 bg-brand-50 border border-brand-200 text-brand-700 rounded-full text-[10px] font-bold">
+                                  {items.length} {t('items')}
+                                </span>
+                                {items.slice(0, 2).map((item, i) => (
+                                  <span key={i} className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 rounded text-[10px] truncate max-w-[120px]">
+                                    {item.assetName}
+                                  </span>
+                                ))}
+                                {items.length > 2 && (
+                                  <button
+                                    onClick={() => toggleDocExpanded(doc.id)}
+                                    className="text-[10px] text-brand-600 hover:text-brand-800 font-semibold"
+                                  >
+                                    +{items.length - 2} more
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{doc.createdByName || 'Warehouse Manager'}</td>
+                            <td className="px-3 py-3 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    setSelectedOtpremnica(doc);
+                                    setIsOtpremnicaOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded border border-brand-100 text-[11px] font-medium flex items-center gap-1"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>{t('View & Print')}</span>
+                                </button>
+                                <button
+                                  onClick={() => exportOtpremnicaPDF(doc)}
+                                  className="p-1 bg-surface-100 hover:bg-surface-200 text-slate-600 rounded border border-surface-200"
+                                  title={t('Download PDF')}
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Expandable Tools List Details Row */}
+                          {isExpanded && (
+                            <tr className="bg-surface-50/70 border-y border-surface-200">
+                              <td colSpan={8} className="px-6 py-4">
+                                <div className="space-y-3 bg-white p-4 rounded-lg border border-surface-200 shadow-sm">
+                                  <div className="flex items-center justify-between border-b border-surface-100 pb-2">
+                                    <div className="flex items-center gap-2">
+                                      <FileText className="w-4 h-4 text-brand-600" />
+                                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800">
+                                        {t('Assigned Tools & Equipment List')} — {doc.documentNumber} ({items.length} {t('items')})
+                                      </h4>
+                                    </div>
+                                    {doc.notes && (
+                                      <div className="text-[11px] text-slate-500 italic max-w-md truncate">
+                                        <span className="font-semibold text-slate-600">{t('Notes')}:</span> {doc.notes}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {items.length === 0 ? (
+                                    <p className="text-center py-3 text-slate-400 text-xs">
+                                      {t('No equipment items recorded on this delivery note.')}
+                                    </p>
+                                  ) : (
+                                    <table className="w-full text-left text-xs border border-surface-200 rounded">
+                                      <thead>
+                                        <tr className="bg-surface-100 text-[10px] uppercase tracking-wider text-slate-600 font-bold border-b border-surface-200">
+                                          <th className="px-3 py-1.5">{t('Asset Code')}</th>
+                                          <th className="px-3 py-1.5">{t('Asset Name')}</th>
+                                          <th className="px-3 py-1.5">{t('Serial Number')}</th>
+                                          <th className="px-3 py-1.5">{t('Category')}</th>
+                                          <th className="px-3 py-1.5">{t('Status')}</th>
+                                          <th className="px-3 py-1.5 text-right">{t('Quantity')}</th>
+                                          <th className="px-3 py-1.5">{t('Notes')}</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-surface-100 text-slate-700">
+                                        {items.map((it, idx) => (
+                                          <tr key={idx} className="hover:bg-surface-50">
+                                            <td className="px-3 py-2 font-mono font-bold text-brand-600">{it.assetNumber}</td>
+                                            <td className="px-3 py-2 font-semibold text-slate-800">{it.assetName}</td>
+                                            <td className="px-3 py-2 font-mono text-slate-500">{it.serialNumber || '—'}</td>
+                                            <td className="px-3 py-2 text-slate-600">{it.category || 'Tool'}</td>
+                                            <td className="px-3 py-2">
+                                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                it.status === 'ISSUED' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                                it.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                                it.status === 'DAMAGED' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                                it.status === 'LOST' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                                                'bg-slate-100 text-slate-700 border border-slate-200'
+                                              }`}>
+                                                {it.status || 'ISSUED'}
+                                              </span>
+                                            </td>
+                                            <td className="px-3 py-2 text-right font-bold text-slate-800">{it.quantity || 1}</td>
+                                            <td className="px-3 py-2 text-[11px] text-slate-400 italic">{it.notes || '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

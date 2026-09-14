@@ -3,8 +3,9 @@ import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { Modal } from '../common/Modal';
 import { useLanguageStore } from '../../store/useLanguageStore';
 import { Package, Plus, User, QrCode, ArrowLeftRight, CheckCircle2, Trash2, ClipboardList, Printer } from 'lucide-react';
-import { ToolBox } from '../../types';
+import { ToolBox, OtpremnicaDocument } from '../../types';
 import { ToolboxInventoryModal } from './ToolboxInventoryModal';
+import { OtpremnicaModal } from './OtpremnicaModal';
 import { exportToolboxInventorySheetPDF } from '../../utils/pdfReportGenerator';
 
 export const ToolBoxModule: React.FC = () => {
@@ -24,6 +25,10 @@ export const ToolBoxModule: React.FC = () => {
   const [targetToolBox, setTargetToolBox] = useState<ToolBox | null>(null);
   const [issueEmployeeId, setIssueEmployeeId] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
+
+  // Otpremnica Modal state
+  const [otpremnicaModalOpen, setOtpremnicaModalOpen] = useState(false);
+  const [currentOtpremnica, setCurrentOtpremnica] = useState<OtpremnicaDocument | null>(null);
 
   // Inventory Audit Modal state
   const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
@@ -87,9 +92,17 @@ export const ToolBoxModule: React.FC = () => {
   const handleConfirmIssueBox = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetToolBox || !issueEmployeeId) return;
-    await issueToolBox(targetToolBox.id, issueEmployeeId, undefined, undefined, issueNotes);
-    setIssueBoxModalOpen(false);
-    setTargetToolBox(null);
+    try {
+      const res = await issueToolBox(targetToolBox.id, issueEmployeeId, undefined, undefined, issueNotes);
+      setIssueBoxModalOpen(false);
+      setTargetToolBox(null);
+      if (res?.otpremnica) {
+        setCurrentOtpremnica(res.otpremnica);
+        setOtpremnicaModalOpen(true);
+      }
+    } catch (err: any) {
+      alert(err.message || t('Failed to issue tool box kit'));
+    }
   };
 
   const handleConfirmReturnBox = async (box: ToolBox) => {
@@ -373,6 +386,13 @@ export const ToolBoxModule: React.FC = () => {
         isOpen={inventoryModalOpen}
         onClose={() => setInventoryModalOpen(false)}
         toolBox={inventoryToolBox}
+      />
+
+      {/* Otpremnica Handover Document Modal */}
+      <OtpremnicaModal
+        isOpen={otpremnicaModalOpen}
+        onClose={() => setOtpremnicaModalOpen(false)}
+        otpremnica={currentOtpremnica}
       />
 
     </div>

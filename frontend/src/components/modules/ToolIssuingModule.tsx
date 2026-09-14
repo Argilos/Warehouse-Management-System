@@ -77,19 +77,23 @@ export const ToolIssuingModule: React.FC = () => {
     const notes = checkoutNotes;
 
     try {
-      const createdTrxs = await issueAssets(selectedAssetIds, empId, projId || undefined, expectedReturnDate, notes);
+      const res = await issueAssets(selectedAssetIds, empId, projId || undefined, expectedReturnDate, notes);
       setIsIssueModalOpen(false);
       setSelectedAssetIds([]);
       setCheckoutNotes('');
 
-      // Forward created transaction IDs directly to the delivery note generator
-      const trxIds = Array.isArray(createdTrxs) ? createdTrxs.map((t: any) => t.id) : undefined;
-
-      // Generate Otpremnica Handover Document
-      const doc = await generateOtpremnica(empId, projId || undefined, trxIds, notes);
+      const doc = res?.otpremnica;
       if (doc) {
         setCurrentOtpremnica(doc);
         setOtpremnicaModalOpen(true);
+      } else {
+        const trxList = Array.isArray(res) ? res : (res?.transactions || []);
+        const trxIds = trxList.map((t: any) => t.id);
+        const generated = await generateOtpremnica(empId, projId || undefined, trxIds, notes);
+        if (generated) {
+          setCurrentOtpremnica(generated);
+          setOtpremnicaModalOpen(true);
+        }
       }
     } catch (err: any) {
       alert(err.message || t('Failed to issue equipment'));
@@ -113,10 +117,20 @@ export const ToolIssuingModule: React.FC = () => {
       return;
     }
 
-    await issueToolBox(selectedToolBoxId, selectedEmployeeId, selectedProjectId || undefined, expectedReturnDate, checkoutNotes);
-    setIsIssueBoxModalOpen(false);
-    setSelectedToolBoxId('');
-    setCheckoutNotes('');
+    try {
+      const res = await issueToolBox(selectedToolBoxId, selectedEmployeeId, selectedProjectId || undefined, expectedReturnDate, checkoutNotes);
+      setIsIssueBoxModalOpen(false);
+      setSelectedToolBoxId('');
+      setCheckoutNotes('');
+
+      const doc = res?.otpremnica;
+      if (doc) {
+        setCurrentOtpremnica(doc);
+        setOtpremnicaModalOpen(true);
+      }
+    } catch (err: any) {
+      alert(err.message || t('Failed to issue tool box kit'));
+    }
   };
 
   const handleReturnToolBoxAction = async (boxId: string) => {
@@ -539,8 +553,27 @@ export const ToolIssuingModule: React.FC = () => {
               <option value="GOOD">{t('GOOD (Excellent condition, clean)')}</option>
               <option value="MINOR_WEAR">{t('MINOR WEAR (Standard field wear)')}</option>
               <option value="DAMAGED">{t('DAMAGED (Requires service order repair)')}</option>
+              <option value="LOST" className="text-rose-600 font-bold">{t('LOST (Asset missing / written off)')}</option>
             </select>
           </div>
+
+          {returnCondition === 'LOST' && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-[11px] space-y-1">
+              <p className="font-bold flex items-center gap-1.5 text-rose-700">
+                <span>⚠️ {t('Permanent Write-Off Warning')}</span>
+              </p>
+              <p>{t('Marking this tool as LOST will permanently retire the asset from active warehouse inventory, close the custody loan, and deduct its book value in fleet accounting.')}</p>
+            </div>
+          )}
+
+          {returnCondition === 'DAMAGED' && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] space-y-1">
+              <p className="font-bold flex items-center gap-1.5 text-amber-700">
+                <span>🔧 {t('Automatic Reactive Maintenance')}</span>
+              </p>
+              <p>{t('Marking this tool as DAMAGED will automatically generate an open Reactive Service Order and assign an urgent Maintenance Task for repairs.')}</p>
+            </div>
+          )}
 
           <div>
             <label className={labelClass}>{t('Return Notes / Inspection Remarks')}</label>

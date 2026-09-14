@@ -3,7 +3,8 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { useWarehouseStore } from '../../store/useWarehouseStore';
 import { useLanguageStore } from '../../store/useLanguageStore';
 import { Modal } from '../common/Modal';
-import { Asset, ToolBox } from '../../types';
+import { Asset, ToolBox, OtpremnicaDocument } from '../../types';
+import { OtpremnicaModal } from './OtpremnicaModal';
 import {
   QrCode, Camera, ArrowLeftRight, Wrench, ShieldAlert,
   CheckCircle2, ArrowRight, RefreshCw, Sparkles, User, FolderOpen, Box, Trash2, Package
@@ -22,6 +23,10 @@ export const QRScannerModule: React.FC = () => {
   const [isScanningCamera, setIsScanningCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
+  // Otpremnica Modal state
+  const [otpremnicaModalOpen, setOtpremnicaModalOpen] = useState(false);
+  const [currentOtpremnica, setCurrentOtpremnica] = useState<OtpremnicaDocument | null>(null);
 
   // Inline Checkout Modal state
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
@@ -108,7 +113,7 @@ export const QRScannerModule: React.FC = () => {
         returnCondition,
         returnNotes || t('Returned via mobile QR scan action')
       );
-      const newStatus = returnCondition === 'DAMAGED' ? 'DAMAGED' : 'AVAILABLE';
+      const newStatus = returnCondition === 'DAMAGED' ? 'DAMAGED' : returnCondition === 'LOST' ? 'LOST' : 'AVAILABLE';
       setActionSuccessMsg(`✓ ${matchedAsset.name} ${t('successfully returned to warehouse.')}`);
       setMatchedAsset({ ...matchedAsset, status: newStatus, holderEmployeeId: undefined, holderEmployeeName: undefined });
       setIsReturnModalOpen(false);
@@ -143,7 +148,7 @@ export const QRScannerModule: React.FC = () => {
     if (!matchedAsset || !checkoutEmployeeId) return;
     setIsSubmitting(true);
     try {
-      await issueAssets(
+      const res = await issueAssets(
         [matchedAsset.id],
         checkoutEmployeeId,
         checkoutProjectId || undefined,
@@ -155,6 +160,11 @@ export const QRScannerModule: React.FC = () => {
       setActionSuccessMsg(`✓ ${matchedAsset.name} ${t('successfully issued to')} ${empName}.`);
       setMatchedAsset({ ...matchedAsset, status: 'ISSUED', holderEmployeeId: checkoutEmployeeId, holderEmployeeName: empName });
       setIsCheckoutModalOpen(false);
+
+      if (res?.otpremnica) {
+        setCurrentOtpremnica(res.otpremnica);
+        setOtpremnicaModalOpen(true);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -598,8 +608,23 @@ export const QRScannerModule: React.FC = () => {
               <option value="GOOD">{t('GOOD (Excellent condition, clean)')}</option>
               <option value="MINOR_WEAR">{t('MINOR WEAR (Standard field wear)')}</option>
               <option value="DAMAGED">{t('DAMAGED (Requires service order repair)')}</option>
+              <option value="LOST" className="text-rose-600 font-bold">{t('LOST (Asset missing / written off)')}</option>
             </select>
           </div>
+
+          {returnCondition === 'LOST' && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-[11px] space-y-1">
+              <p className="font-bold text-rose-700">⚠️ {t('Permanent Write-Off Warning')}</p>
+              <p>{t('Marking this tool as LOST will permanently retire the asset from active warehouse inventory, close the custody loan, and deduct its book value in fleet accounting.')}</p>
+            </div>
+          )}
+
+          {returnCondition === 'DAMAGED' && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] space-y-1">
+              <p className="font-bold text-amber-700">🔧 {t('Automatic Reactive Maintenance')}</p>
+              <p>{t('Marking this tool as DAMAGED will automatically generate an open Reactive Service Order and assign an urgent Maintenance Task for repairs.')}</p>
+            </div>
+          )}
 
           {/* Return Notes */}
           <div>
@@ -632,6 +657,13 @@ export const QRScannerModule: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Otpremnica Handover Document Modal */}
+      <OtpremnicaModal
+        isOpen={otpremnicaModalOpen}
+        onClose={() => setOtpremnicaModalOpen(false)}
+        otpremnica={currentOtpremnica}
+      />
 
     </div>
   );

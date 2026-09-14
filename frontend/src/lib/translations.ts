@@ -602,6 +602,15 @@ export const translations: Record<Language, Record<string, string>> = {
     'Current Custody / Holder': 'Current Custody / Holder',
     'Currently Issued': 'Currently Issued',
     'Previously Rented': 'Previously Rented',
+    'Assigned Equipment & Tools': 'Assigned Equipment & Tools',
+    'Assigned Tools & Equipment List': 'Assigned Tools & Equipment List',
+    'LOST (Asset missing / written off)': 'LOST (Asset missing / written off)',
+    'Permanent Write-Off Warning': 'Permanent Write-Off Warning',
+    'Automatic Reactive Maintenance': 'Automatic Reactive Maintenance',
+    'Expand tool details': 'Expand tool details',
+    'Collapse tool details': 'Collapse tool details',
+    'Marking this tool as LOST will permanently retire the asset from active warehouse inventory, close the custody loan, and deduct its book value in fleet accounting.': 'Marking this tool as LOST will permanently retire the asset from active warehouse inventory, close the custody loan, and deduct its book value in fleet accounting.',
+    'Marking this tool as DAMAGED will automatically generate an open Reactive Service Order and assign an urgent Maintenance Task for repairs.': 'Marking this tool as DAMAGED will automatically generate an open Reactive Service Order and assign an urgent Maintenance Task for repairs.',
 
     // Otpremnica Document Modal
     'Otpremnica': 'Otpremnica / Delivery Note',
@@ -1256,6 +1265,15 @@ export const translations: Record<Language, Record<string, string>> = {
     'Current Custody / Holder': 'Trenutno zaduženje / Nosilac',
     'Currently Issued': 'Trenutno zaduženo',
     'Previously Rented': 'Ranije zaduživano / vraćeno',
+    'Assigned Equipment & Tools': 'Zadužena oprema i alati',
+    'Assigned Tools & Equipment List': 'Lista zadužene opreme i alata',
+    'LOST (Asset missing / written off)': 'IZGUBLJENO (Nestao alat / otpis)',
+    'Permanent Write-Off Warning': 'Upozorenje o trajnom otpisu',
+    'Automatic Reactive Maintenance': 'Automatski nalog za popravku',
+    'Expand tool details': 'Prikaži detalje alata',
+    'Collapse tool details': 'Sakrij detalje alata',
+    'Marking this tool as LOST will permanently retire the asset from active warehouse inventory, close the custody loan, and deduct its book value in fleet accounting.': 'Označavanje alata kao IZGUBLJENO trajno povlači alat iz upotrebe, zaključuje zaduženje i otpisuje njegovu vrijednost iz knjigovodstva.',
+    'Marking this tool as DAMAGED will automatically generate an open Reactive Service Order and assign an urgent Maintenance Task for repairs.': 'Označavanje alata kao OŠTEĆENO automatski otvara reaktivni servisni nalog i zadatak održavanja za popravku.',
 
     // Otpremnica Modal
     'Otpremnica': 'Otpremnica',
@@ -1910,6 +1928,15 @@ export const translations: Record<Language, Record<string, string>> = {
     'Current Custody / Holder': 'Aktuelle Obhut / Inhaber',
     'Currently Issued': 'Derzeit ausgeliehen',
     'Previously Rented': 'Früher ausgeliehen',
+    'Assigned Equipment & Tools': 'Zugewiesene Ausrüstung & Werkzeuge',
+    'Assigned Tools & Equipment List': 'Liste der zugewiesenen Werkzeuge & Geräte',
+    'LOST (Asset missing / written off)': 'VERLOREN (Gerät fehlt / abgeschrieben)',
+    'Permanent Write-Off Warning': 'Warnung: Dauerhafte Abschreibung',
+    'Automatic Reactive Maintenance': 'Automatische reaktive Reparatur',
+    'Expand tool details': 'Werkzeugdetails einblenden',
+    'Collapse tool details': 'Werkzeugdetails ausblenden',
+    'Marking this tool as LOST will permanently retire the asset from active warehouse inventory, close the custody loan, and deduct its book value in fleet accounting.': 'Die Kennzeichnung als VERLOREN entfernt das Gerät dauerhaft aus dem Bestand, beendet die Leihe und schreibt den Buchwert ab.',
+    'Marking this tool as DAMAGED will automatically generate an open Reactive Service Order and assign an urgent Maintenance Task for repairs.': 'Die Kennzeichnung als BESCHÄDIGT erstellt automatisch einen offenen Serviceauftrag und eine dringende Wartungsaufgabe.',
 
     // Otpremnica Modal
     'Otpremnica': 'Lieferschein / Übergabeschein',

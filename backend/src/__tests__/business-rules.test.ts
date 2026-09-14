@@ -162,6 +162,64 @@ async function runTests() {
     assertEquals(res.data.items[1].serialNumber, 'SN-888');
   });
 
+  await test('1.2 Otpremnica list endpoint (GET /otpremnica) resolves full tool items regardless of subsequent status changes', async () => {
+    (prisma.otpremnicaDocument as any).findMany = async () => [
+      {
+        id: 'doc-list-1',
+        documentNumber: 'OTP-2026-0001',
+        employeeId: 'emp-1',
+        issueDate: new Date('2026-03-01'),
+        transactionIds: ['trx-hist-1', 'trx-hist-2'],
+        createdAt: new Date('2026-03-01'),
+        employee: { firstName: 'Alice', lastName: 'Smith', employeeNumber: 'EMP-01', department: 'Electrical' },
+        project: { name: 'Metro Line 3', projectCode: 'PRJ-M3' },
+        createdBy: { firstName: 'Admin', lastName: 'User' },
+      },
+    ];
+
+    (prisma.assetTransaction as any).findMany = async () => [
+      {
+        id: 'trx-hist-1',
+        assetId: 'ast-h1',
+        asset: {
+          id: 'ast-h1',
+          name: 'Oscilloscope',
+          assetNumber: 'OSC-01',
+          serialNumber: 'SN-OSC-777',
+          category: 'Measuring Instruments',
+          status: 'DAMAGED', // Status changed to DAMAGED later
+        },
+        notes: 'Calibrated scope',
+      },
+      {
+        id: 'trx-hist-2',
+        assetId: 'ast-h2',
+        asset: {
+          id: 'ast-h2',
+          name: 'Multimeter',
+          assetNumber: 'MM-02',
+          serialNumber: 'SN-MM-888',
+          category: 'Measuring Instruments',
+          status: 'AVAILABLE', // Returned later
+        },
+      },
+    ];
+
+    const res = await apiRequest('GET', '/otpremnica');
+    assertEquals(res.status, 200, 'Expected 200 OK');
+    assert(Array.isArray(res.data), 'Expected array of otpremnice');
+    assertEquals(res.data.length, 1, 'Expected 1 document');
+    const doc = res.data[0];
+    assertEquals(doc.documentNumber, 'OTP-2026-0001');
+    assert(Array.isArray(doc.items), 'doc.items must be an array');
+    assertEquals(doc.items.length, 2, 'items must resolve all 2 assigned tools');
+    assertEquals(doc.items[0].assetName, 'Oscilloscope');
+    assertEquals(doc.items[0].serialNumber, 'SN-OSC-777');
+    assertEquals(doc.items[0].status, 'DAMAGED');
+    assertEquals(doc.items[1].assetName, 'Multimeter');
+    assertEquals(doc.items[1].status, 'AVAILABLE');
+  });
+
   // --------------------------------------------------------------------------
   // RULE 2: CRATES (TOOLBOXES) - ISSUANCE RULES
   // --------------------------------------------------------------------------
@@ -275,9 +333,46 @@ async function runTests() {
       capturedWhereFilter.status &&
       capturedWhereFilter.status.notIn &&
       capturedWhereFilter.status.notIn.includes('LOST') &&
-      capturedWhereFilter.status.notIn.includes('RETIRED'),
-      `Expected where filter to exclude LOST and RETIRED, got: ${JSON.stringify(capturedWhereFilter)}`
+      capturedWhereFilter.status.notIn.includes('RETIRED') &&
+      capturedWhereFilter.status.notIn.includes('DAMAGED'),
+      `Expected where filter to exclude LOST, RETIRED, and DAMAGED, got: ${JSON.stringify(capturedWhereFilter)}`
     );
+  });
+
+  await test('2.6 Dismantling crate releases contained tools for individual issuance again', async () => {
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-released-from-crate',
+        name: 'Hammer Drill',
+        assetNumber: 'HD-50',
+        status: 'AVAILABLE',
+      },
+    ];
+    // After dismantle, toolbox items are deleted, so toolBoxItem.findMany returns empty array!
+    (prisma.toolBoxItem as any).findMany = async () => [];
+    (prisma.asset as any).update = async () => ({ id: 'asset-released-from-crate', status: 'ISSUED' });
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 0 });
+    (prisma.employeeAsset as any).create = async () => ({});
+    (prisma.assetTransaction as any).create = async (args: any) => ({
+      id: 'trx-rel-1',
+      ...args.data,
+      asset: { id: 'asset-released-from-crate', name: 'Hammer Drill', assetNumber: 'HD-50' },
+      employee: { firstName: 'Worker' },
+    });
+    (prisma.otpremnicaDocument as any).count = async () => 1;
+    (prisma.otpremnicaDocument as any).create = async () => ({
+      id: 'doc-rel-1',
+      documentNumber: 'OTP-2026-0002',
+      items: [],
+      transactionIds: ['trx-rel-1'],
+    });
+
+    const res = await apiRequest('POST', '/transactions/issue', {
+      assetIds: ['asset-released-from-crate'],
+      employeeId: 'emp-worker',
+    });
+
+    assertEquals(res.status, 201, 'Expected 201 Created now that crate is dismantled');
   });
 
   await test('2.4 Adding a DAMAGED or RETIRED tool to a crate is blocked with 400', async () => {
@@ -498,6 +593,78 @@ async function runTests() {
     );
   });
 
+  await test('3.7 Returning a tool with condition LOST transitions status to LOST and blocks re-issuance', async () => {
+    let updatedAssetStatus: string | null = null;
+    let employeeAssignmentClosed = false;
+
+    (prisma.asset as any).findUnique = async () => ({
+      id: 'asset-lost-return-1',
+      name: 'Rotary Hammer SDS',
+      assetNumber: 'RH-99',
+      status: 'ISSUED',
+      currentValue: 450,
+    });
+
+    (prisma.employeeAsset as any).findFirst = async () => ({
+      id: 'ea-active-1',
+      employeeId: 'emp-lost-1',
+      assetId: 'asset-lost-return-1',
+      returnedDate: null,
+    });
+
+    (prisma.employeeAsset as any).updateMany = async () => {
+      employeeAssignmentClosed = true;
+      return { count: 1 };
+    };
+
+    (prisma.asset as any).update = async (args: any) => {
+      updatedAssetStatus = args.data.status;
+      return { id: 'asset-lost-return-1', status: args.data.status };
+    };
+
+    (prisma.assetTransaction as any).create = async (args: any) => ({
+      id: 'trx-ret-lost-1',
+      ...args.data,
+      asset: { id: 'asset-lost-return-1', name: 'Rotary Hammer SDS', assetNumber: 'RH-99' },
+      employee: { firstName: 'Bob', lastName: 'Builder' },
+      performedBy: { firstName: 'Admin', lastName: 'User' },
+    });
+
+    (prisma.notification as any).create = async () => ({ id: 'notif-1' });
+    (prisma.auditLog as any).create = async () => ({ id: 'log-1' });
+
+    const returnRes = await apiRequest('POST', '/transactions/return', {
+      assetId: 'asset-lost-return-1',
+      condition: 'LOST',
+      notes: 'Lost on site during flood',
+    });
+
+    assertEquals(returnRes.status, 201, 'Expected 201 Created on return');
+    assertEquals(updatedAssetStatus, 'LOST', 'Asset status must be transitioned to LOST');
+    assertEquals(employeeAssignmentClosed, true, 'Active employee loan must be closed');
+
+    // Verify defensive terminal status blocks future issuance
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'asset-lost-return-1',
+        name: 'Rotary Hammer SDS',
+        assetNumber: 'RH-99',
+        status: 'LOST',
+      },
+    ];
+
+    const issueRes = await apiRequest('POST', '/transactions/issue', {
+      assetIds: ['asset-lost-return-1'],
+      employeeId: 'emp-2',
+    });
+
+    assertEquals(issueRes.status, 400, 'Expected 400 Bad Request when attempting to re-issue lost tool');
+    assert(
+      issueRes.data.error && issueRes.data.error.includes('has status LOST and cannot be issued'),
+      `Expected terminal status error message, got: ${issueRes.data.error}`
+    );
+  });
+
   // --------------------------------------------------------------------------
   // RULE 4: MAINTENANCE TASK COMPLETION LOGIC
   // --------------------------------------------------------------------------
@@ -651,6 +818,73 @@ async function runTests() {
     assertEquals(taskStatusUpdatedTo, 'COMPLETED', 'Task status must be COMPLETED');
     assertEquals(assetUpdatedToStatus, 'AVAILABLE', 'Tool status must transition to AVAILABLE');
     assertEquals(planAdvanced, true, 'Plan schedule must be advanced');
+  });
+
+  await test('4.4 Returning a tool with condition DAMAGED auto-creates reactive ServiceOrder and MaintenanceTask atomically', async () => {
+    let updatedAssetStatus: string | null = null;
+    let createdServiceOrder: any = null;
+    let createdMaintenanceTask: any = null;
+
+    (prisma.asset as any).findUnique = async () => ({
+      id: 'asset-dmg-return-1',
+      name: 'Angle Grinder 2000W',
+      assetNumber: 'AG-42',
+      status: 'ISSUED',
+    });
+
+    (prisma.employeeAsset as any).findFirst = async () => ({
+      id: 'ea-active-2',
+      employeeId: 'emp-dmg-1',
+      assetId: 'asset-dmg-return-1',
+      returnedDate: null,
+    });
+
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 1 });
+
+    (prisma.asset as any).update = async (args: any) => {
+      updatedAssetStatus = args.data.status;
+      return { id: 'asset-dmg-return-1', status: args.data.status };
+    };
+
+    (prisma.assetTransaction as any).create = async (args: any) => ({
+      id: 'trx-ret-dmg-1',
+      ...args.data,
+      asset: { id: 'asset-dmg-return-1', name: 'Angle Grinder 2000W', assetNumber: 'AG-42' },
+      employee: { firstName: 'Charlie', lastName: 'Brown' },
+      performedBy: { firstName: 'Admin', lastName: 'User' },
+    });
+
+    (prisma.serviceOrder as any).create = async (args: any) => {
+      createdServiceOrder = { id: 'so-auto-1', ...args.data };
+      return createdServiceOrder;
+    };
+
+    (prisma.maintenanceTask as any).create = async (args: any) => {
+      createdMaintenanceTask = { id: 'task-auto-1', ...args.data };
+      return createdMaintenanceTask;
+    };
+
+    (prisma.notification as any).create = async () => ({ id: 'notif-2' });
+    (prisma.auditLog as any).create = async () => ({ id: 'log-2' });
+
+    const returnRes = await apiRequest('POST', '/transactions/return', {
+      assetId: 'asset-dmg-return-1',
+      condition: 'DAMAGED',
+      notes: 'Motor smoked and ceased during cutting operations',
+    });
+
+    assertEquals(returnRes.status, 201, 'Expected 201 Created on damaged tool return');
+    assertEquals(updatedAssetStatus, 'DAMAGED', 'Asset status must be transitioned to DAMAGED');
+    assert(createdServiceOrder !== null, 'ServiceOrder must be automatically created');
+    assertEquals(createdServiceOrder.status, 'PENDING', 'Auto ServiceOrder must have default PENDING status');
+    assert(
+      createdServiceOrder.problemDescription.includes('trx-ret-dmg-1'),
+      'ServiceOrder description must reference return transaction ID for traceability'
+    );
+    assert(createdMaintenanceTask !== null, 'MaintenanceTask must be automatically created');
+    assertEquals(createdMaintenanceTask.type, 'REACTIVE', 'MaintenanceTask must have type REACTIVE');
+    assertEquals(createdMaintenanceTask.priority, 'HIGH', 'MaintenanceTask must have priority HIGH');
+    assertEquals(createdMaintenanceTask.status, 'PENDING', 'MaintenanceTask must have status PENDING');
   });
 
   // --------------------------------------------------------------------------
@@ -886,6 +1120,218 @@ async function runTests() {
       res.data.error && res.data.error.includes('in this toolbox has status DAMAGED and the toolbox cannot be issued'),
       `Expected error message, got: ${res.data.error}`
     );
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST SUITE 8: UNIVERSAL OTPREMNICA GENERATION ON ISSUANCE
+  // --------------------------------------------------------------------------
+  console.log('\nTest Suite 8: Universal Otpremnica Generation on Every Issuance');
+
+  await test('8.1 POST /transactions/issue auto-generates an OtpremnicaDocument containing full tool details', async () => {
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'ast-univ-1',
+        name: 'Impact Driver',
+        assetNumber: 'ID-01',
+        serialNumber: 'SN-IMP-101',
+        category: 'Power Tools',
+        status: 'AVAILABLE',
+      },
+      {
+        id: 'ast-univ-2',
+        name: 'Laser Distance Meter',
+        assetNumber: 'LDM-02',
+        serialNumber: 'SN-LDM-202',
+        category: 'Measuring Instruments',
+        status: 'AVAILABLE',
+      },
+    ];
+
+    (prisma.toolBoxItem as any).findMany = async () => [];
+    (prisma.asset as any).update = async (args: any) => ({ id: args.where.id, status: 'ISSUED' });
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 0 });
+    (prisma.employeeAsset as any).create = async () => ({ id: 'ea-new' });
+
+    let trxCounter = 1;
+    (prisma.assetTransaction as any).create = async (args: any) => ({
+      id: `trx-univ-${trxCounter++}`,
+      ...args.data,
+      asset: {
+        id: args.data.assetId,
+        name: args.data.assetId === 'ast-univ-1' ? 'Impact Driver' : 'Laser Distance Meter',
+        assetNumber: args.data.assetId === 'ast-univ-1' ? 'ID-01' : 'LDM-02',
+        serialNumber: args.data.assetId === 'ast-univ-1' ? 'SN-IMP-101' : 'SN-LDM-202',
+        category: args.data.assetId === 'ast-univ-1' ? 'Power Tools' : 'Measuring Instruments',
+        status: 'ISSUED',
+      },
+      employee: { firstName: 'Dave', lastName: 'Miller', employeeNumber: 'EMP-DM' },
+      project: { name: 'Tower Project' },
+      performedBy: { firstName: 'Admin', lastName: 'User' },
+    });
+
+    (prisma.assetTransaction as any).findMany = async (args: any) => [
+      {
+        id: 'trx-univ-1',
+        assetId: 'ast-univ-1',
+        asset: {
+          id: 'ast-univ-1',
+          name: 'Impact Driver',
+          assetNumber: 'ID-01',
+          serialNumber: 'SN-IMP-101',
+          category: 'Power Tools',
+          status: 'ISSUED',
+        },
+      },
+      {
+        id: 'trx-univ-2',
+        assetId: 'ast-univ-2',
+        asset: {
+          id: 'ast-univ-2',
+          name: 'Laser Distance Meter',
+          assetNumber: 'LDM-02',
+          serialNumber: 'SN-LDM-202',
+          category: 'Measuring Instruments',
+          status: 'ISSUED',
+        },
+      },
+    ];
+
+    (prisma.otpremnicaDocument as any).count = async () => 10;
+    (prisma.otpremnicaDocument as any).create = async (args: any) => ({
+      id: 'otp-doc-univ-1',
+      ...args.data,
+      employee: { firstName: 'Dave', lastName: 'Miller', employeeNumber: 'EMP-DM', department: 'Construction' },
+      project: { name: 'Tower Project', projectCode: 'PRJ-TP' },
+      createdBy: { firstName: 'Admin', lastName: 'User' },
+    });
+
+    const res = await apiRequest('POST', '/transactions/issue', {
+      assetIds: ['ast-univ-1', 'ast-univ-2'],
+      employeeId: 'emp-dave',
+      projectId: 'proj-tower',
+      notes: 'Initial construction phase loan',
+    });
+
+    assertEquals(res.status, 201, 'Expected 201 Created for issuance');
+    assert(res.data.otpremnica !== null, 'Issuance response must include auto-generated otpremnica');
+    assertEquals(res.data.otpremnica.documentNumber, 'OTP-2026-0011', 'Document number should follow format');
+    assert(Array.isArray(res.data.otpremnica.items), 'Otpremnica must contain items array');
+    assertEquals(res.data.otpremnica.items.length, 2, 'Must contain both issued tools');
+    assertEquals(res.data.otpremnica.items[0].assetName, 'Impact Driver');
+    assertEquals(res.data.otpremnica.items[0].serialNumber, 'SN-IMP-101');
+    assertEquals(res.data.otpremnica.items[1].assetName, 'Laser Distance Meter');
+    assertEquals(res.data.otpremnica.items[1].serialNumber, 'SN-LDM-202');
+  });
+
+  await test('8.2 POST /toolboxes/issue creates transactions and auto-generates OtpremnicaDocument listing crate and tools', async () => {
+    (prisma.toolBox as any).findUnique = async () => ({
+      id: 'box-univ-1',
+      boxNumber: 'CRATE-PRO-01',
+      name: 'HVAC Site Crate',
+      status: 'ACTIVE',
+      items: [
+        {
+          assetId: 'ast-hvac-1',
+          asset: {
+            id: 'ast-hvac-1',
+            name: 'Manifold Gauge Set',
+            assetNumber: 'MGS-01',
+            serialNumber: 'SN-MGS-55',
+            category: 'HVAC Equipment',
+            status: 'AVAILABLE',
+          },
+        },
+        {
+          assetId: 'ast-hvac-2',
+          asset: {
+            id: 'ast-hvac-2',
+            name: 'Vacuum Pump',
+            assetNumber: 'VP-01',
+            serialNumber: 'SN-VP-99',
+            category: 'HVAC Equipment',
+            status: 'AVAILABLE',
+          },
+        },
+      ],
+    });
+
+    (prisma.toolBox as any).update = async (args: any) => ({
+      id: 'box-univ-1',
+      boxNumber: 'CRATE-PRO-01',
+      name: 'HVAC Site Crate',
+      ...args.data,
+    });
+
+    (prisma.asset as any).updateMany = async () => ({ count: 2 });
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 0 });
+    (prisma.employeeAsset as any).create = async () => ({ id: 'ea-kit-1' });
+
+    let tCounter = 1;
+    (prisma.assetTransaction as any).create = async (args: any) => ({
+      id: `trx-kit-${tCounter++}`,
+      ...args.data,
+      asset: {
+        id: args.data.assetId,
+        name: args.data.assetId === 'ast-hvac-1' ? 'Manifold Gauge Set' : 'Vacuum Pump',
+        assetNumber: args.data.assetId === 'ast-hvac-1' ? 'MGS-01' : 'VP-01',
+        serialNumber: args.data.assetId === 'ast-hvac-1' ? 'SN-MGS-55' : 'SN-VP-99',
+        category: 'HVAC Equipment',
+        status: 'ISSUED',
+      },
+      employee: { firstName: 'Elena', lastName: 'Rostova', employeeNumber: 'EMP-ER' },
+      performedBy: { firstName: 'Admin', lastName: 'User' },
+    });
+
+    (prisma.assetTransaction as any).findMany = async (args: any) => [
+      {
+        id: 'trx-kit-1',
+        assetId: 'ast-hvac-1',
+        asset: {
+          id: 'ast-hvac-1',
+          name: 'Manifold Gauge Set',
+          assetNumber: 'MGS-01',
+          serialNumber: 'SN-MGS-55',
+          category: 'HVAC Equipment',
+          status: 'ISSUED',
+        },
+      },
+      {
+        id: 'trx-kit-2',
+        assetId: 'ast-hvac-2',
+        asset: {
+          id: 'ast-hvac-2',
+          name: 'Vacuum Pump',
+          assetNumber: 'VP-01',
+          serialNumber: 'SN-VP-99',
+          category: 'HVAC Equipment',
+          status: 'ISSUED',
+        },
+      },
+    ];
+
+    (prisma.otpremnicaDocument as any).count = async () => 15;
+    (prisma.otpremnicaDocument as any).create = async (args: any) => ({
+      id: 'otp-crate-doc-1',
+      ...args.data,
+      employee: { firstName: 'Elena', lastName: 'Rostova', employeeNumber: 'EMP-ER', department: 'HVAC' },
+      createdBy: { firstName: 'Admin', lastName: 'User' },
+    });
+
+    const res = await apiRequest('POST', '/toolboxes/issue', {
+      boxId: 'box-univ-1',
+      employeeId: 'emp-elena',
+      notes: 'Deployment to Phase 2 cooling plant',
+    });
+
+    assertEquals(res.status, 200, 'Expected 200 OK for toolbox issue');
+    assert(res.data.otpremnica !== null, 'Toolbox issue must return generated otpremnica');
+    assertEquals(res.data.transactions.length, 2, 'Should create 2 transactions for component tools');
+    assert(Array.isArray(res.data.otpremnica.items), 'Otpremnica must have items array');
+    assertEquals(res.data.otpremnica.items.length, 3, 'Must list 1 crate kit header + 2 component tools');
+    assertEquals(res.data.otpremnica.items[0].isKitHeader, true, 'First item must be kit header');
+    assertEquals(res.data.otpremnica.items[0].assetName, '[KIT] HVAC Site Crate');
+    assertEquals(res.data.otpremnica.items[1].assetName, 'Manifold Gauge Set');
+    assertEquals(res.data.otpremnica.items[2].assetName, 'Vacuum Pump');
   });
 
   // Close server
