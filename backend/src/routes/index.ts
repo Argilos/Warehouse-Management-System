@@ -13,6 +13,55 @@ const router = Router();
 // Helper to format dates cleanly or fallback
 const parseDate = (d?: string | Date) => (d ? new Date(d) : new Date());
 
+export interface DateRangeResult {
+  filter?: { gte?: Date; lte?: Date };
+  error?: string;
+}
+
+export function parseDateRangeFilter(req: Request): DateRangeResult {
+  const { startDate, endDate } = req.query;
+  if (!startDate && !endDate) {
+    return {};
+  }
+
+  let start: Date | undefined;
+  let end: Date | undefined;
+
+  if (startDate) {
+    const sStr = String(startDate).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(sStr)) {
+      start = new Date(`${sStr}T00:00:00.000Z`);
+    } else {
+      start = new Date(sStr);
+    }
+    if (isNaN(start.getTime())) {
+      return { error: `Invalid startDate format: "${startDate}". Expected YYYY-MM-DD or valid ISO date.` };
+    }
+  }
+
+  if (endDate) {
+    const eStr = String(endDate).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(eStr)) {
+      end = new Date(`${eStr}T23:59:59.999Z`);
+    } else {
+      end = new Date(eStr);
+    }
+    if (isNaN(end.getTime())) {
+      return { error: `Invalid endDate format: "${endDate}". Expected YYYY-MM-DD or valid ISO date.` };
+    }
+  }
+
+  if (start && end && start > end) {
+    return { error: 'startDate cannot be after endDate' };
+  }
+
+  const dateClause: { gte?: Date; lte?: Date } = {};
+  if (start) dateClause.gte = start;
+  if (end) dateClause.lte = end;
+
+  return { filter: dateClause };
+}
+
 interface ToolboxKitInfo {
   id: string;
   boxNumber: string;
@@ -767,7 +816,36 @@ router.get('/initial-data', async (req: Request, res: Response) => {
 // ─── ASSETS ──────────────────────────────────────────────────────────────────
 router.get('/assets', async (req: Request, res: Response) => {
   try {
-    const assets = await prisma.asset.findMany({ orderBy: { createdAt: 'desc' } });
+    const { filter: dateFilter, error: dateError } = parseDateRangeFilter(req);
+    if (dateError) {
+      return res.status(400).json({ error: dateError });
+    }
+
+    const where: any = {};
+    if (dateFilter) {
+      where.purchaseDate = dateFilter;
+    }
+    if (req.query.status && req.query.status !== 'ALL') {
+      where.status = String(req.query.status);
+    }
+    if (req.query.category && req.query.category !== 'ALL') {
+      where.category = String(req.query.category);
+    }
+
+    const assets = await prisma.asset.findMany({
+      where,
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      include: {
+        supplier: true,
+        employeeAssets: {
+          where: { returnedDate: null },
+          include: { employee: true },
+          take: 1,
+        },
+        serviceOrders: { orderBy: { createdAt: 'desc' }, take: 1 },
+        calibrations: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
     res.json(assets);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch assets' });
@@ -854,6 +932,60 @@ router.delete('/assets/:id', async (req: Request, res: Response) => {
 });
 
 // ─── TRANSACTIONS (ISSUING & RETURN) ─────────────────────────────────────────
+router.get('/transactions', async (req: Request, res: Response) => {
+  try {
+    const { filter: dateFilter, error: dateError } = parseDateRangeFilter(req);
+    if (dateError) {
+      return res.status(400).json({ error: dateError });
+    }
+
+    const { employeeId, projectId, transactionType, assetId } = req.query;
+    const where: any = {};
+    if (dateFilter) {
+      where.transactionDate = dateFilter;
+    }
+    if (employeeId && employeeId !== 'ALL') {
+      where.employeeId = String(employeeId);
+    }
+    if (projectId && projectId !== 'ALL') {
+      where.projectId = String(projectId);
+    }
+    if (transactionType && transactionType !== 'ALL') {
+      where.transactionType = String(transactionType);
+    }
+    if (assetId) {
+      where.assetId = String(assetId);
+    }
+
+    const transactions = await prisma.assetTransaction.findMany({
+      where,
+      include: { asset: true, employee: true, performedBy: true, project: true },
+      orderBy: { transactionDate: 'desc' },
+    });
+
+    const formatted = transactions.map((t: any) => ({
+      id: t.id,
+      assetId: t.assetId,
+      assetName: t.asset ? t.asset.name : '',
+      assetNumber: t.asset ? t.asset.assetNumber : '',
+      employeeId: t.employeeId || undefined,
+      employeeName: t.employee ? `${t.employee.firstName} ${t.employee.lastName}` : undefined,
+      transactionType: t.transactionType,
+      transactionDate: t.transactionDate ? (t.transactionDate instanceof Date ? t.transactionDate.toISOString() : new Date(t.transactionDate).toISOString()) : new Date().toISOString(),
+      returnDate: t.returnDate ? (t.returnDate instanceof Date ? t.returnDate.toISOString().slice(0, 10) : new Date(t.returnDate).toISOString().slice(0, 10)) : undefined,
+      performedById: t.performedById,
+      performedByName: t.performedBy ? `${t.performedBy.firstName} ${t.performedBy.lastName}` : 'Warehouse Staff',
+      notes: t.notes || undefined,
+      projectId: t.projectId || undefined,
+      projectName: t.project?.name || undefined,
+    }));
+
+    res.json(formatted);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch transactions' });
+  }
+});
+
 router.post('/transactions/issue', async (req: Request, res: Response) => {
   try {
     const { assetIds, employeeId, projectId, expectedReturnDate, notes, performedById } = req.body;
@@ -1586,8 +1718,23 @@ router.post('/toolboxes/:id/dismantle', async (req: Request, res: Response) => {
 // ─── SERVICE ORDERS ──────────────────────────────────────────────────────────
 router.get('/service-orders', async (req: Request, res: Response) => {
   try {
+    const { filter: dateFilter, error: dateError } = parseDateRangeFilter(req);
+    if (dateError) {
+      return res.status(400).json({ error: dateError });
+    }
+
+    const where: any = {};
+    if (dateFilter) {
+      where.createdAt = dateFilter;
+    }
+    if (req.query.status && req.query.status !== 'ALL') {
+      where.status = String(req.query.status);
+    }
+
     const orders = await prisma.serviceOrder.findMany({
+      where,
       include: { asset: true, supplier: true },
+      orderBy: { createdAt: 'desc' },
     });
     res.json(orders);
   } catch (error) {
@@ -1796,8 +1943,23 @@ router.put('/service-orders/:id/complete', async (req: Request, res: Response) =
 // ─── CALIBRATION RECORDS ─────────────────────────────────────────────────────
 router.get('/calibrations', async (req: Request, res: Response) => {
   try {
+    const { filter: dateFilter, error: dateError } = parseDateRangeFilter(req);
+    if (dateError) {
+      return res.status(400).json({ error: dateError });
+    }
+
+    const where: any = {};
+    if (dateFilter) {
+      where.calibrationDate = dateFilter;
+    }
+    if (req.query.result && req.query.result !== 'ALL') {
+      where.result = String(req.query.result);
+    }
+
     const calibrations = await prisma.calibrationRecord.findMany({
+      where,
       include: { asset: true, provider: true },
+      orderBy: { createdAt: 'desc' },
     });
     res.json(calibrations);
   } catch (error) {
@@ -2486,7 +2648,24 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
 // ─── OTPREMNICA / EQUIPMENT HANDOVER DOCUMENTS ─────────────────────────────
 router.get('/otpremnica', async (req: Request, res: Response) => {
   try {
+    const { filter: dateFilter, error: dateError } = parseDateRangeFilter(req);
+    if (dateError) {
+      return res.status(400).json({ error: dateError });
+    }
+
+    const where: any = {};
+    if (dateFilter) {
+      where.issueDate = dateFilter;
+    }
+    if (req.query.employeeId && req.query.employeeId !== 'ALL') {
+      where.employeeId = String(req.query.employeeId);
+    }
+    if (req.query.projectId && req.query.projectId !== 'ALL') {
+      where.projectId = String(req.query.projectId);
+    }
+
     const docs = await prisma.otpremnicaDocument.findMany({
+      where,
       include: { employee: true, project: true, createdBy: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -2643,6 +2822,72 @@ router.get('/toolboxes/:id/inventory-history', async (req: Request, res: Respons
     res.json(checks);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch toolbox inventory history' });
+  }
+});
+
+// ─── REPORTS & ANALYTICS SUMMARY ──────────────────────────────────────────
+router.get('/reports/summary', async (req: Request, res: Response) => {
+  try {
+    const { filter: dateFilter, error: dateError } = parseDateRangeFilter(req);
+    if (dateError) {
+      return res.status(400).json({ error: dateError });
+    }
+
+    const assetWhere: any = {};
+    if (dateFilter) {
+      assetWhere.purchaseDate = dateFilter;
+    }
+
+    const assets = await prisma.asset.findMany({
+      where: assetWhere,
+      select: {
+        id: true,
+        status: true,
+        purchasePrice: true,
+        currentValue: true,
+      },
+    });
+
+    const totalAssets = assets.length;
+    const totalAcquisitionValue = assets.reduce((sum, a) => sum + a.purchasePrice, 0);
+    const totalCurrentValue = assets.reduce((sum, a) => sum + a.currentValue, 0);
+    const lostAssets = assets.filter(a => a.status === 'LOST' || (a.status as any) === 'MISSING');
+    const totalLostValue = lostAssets.reduce((sum, a) => sum + (a.currentValue ?? a.purchasePrice ?? 0), 0);
+    const netActiveBookValue = totalCurrentValue - totalLostValue;
+
+    const trxWhere: any = {};
+    if (dateFilter) {
+      trxWhere.transactionDate = dateFilter;
+    }
+    const transactionCount = await prisma.assetTransaction.count({ where: trxWhere });
+
+    const docWhere: any = {};
+    if (dateFilter) {
+      docWhere.issueDate = dateFilter;
+    }
+    const otpremnicaCount = await prisma.otpremnicaDocument.count({ where: docWhere });
+
+    const soWhere: any = {};
+    if (dateFilter) {
+      soWhere.createdAt = dateFilter;
+    }
+    const serviceOrderCount = await prisma.serviceOrder.count({ where: soWhere });
+
+    res.json({
+      startDate: req.query.startDate || null,
+      endDate: req.query.endDate || null,
+      totalAssets,
+      totalAcquisitionValue,
+      totalCurrentValue,
+      netActiveBookValue,
+      lostAssetsCount: lostAssets.length,
+      totalLostValue,
+      transactionCount,
+      otpremnicaCount,
+      serviceOrderCount,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch report summary' });
   }
 });
 

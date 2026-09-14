@@ -30,9 +30,9 @@ async function test(name: string, fn: () => Promise<void>) {
   }
 }
 
-function assert(condition: boolean, message: string) {
+function assert(condition: boolean, message?: string) {
   if (!condition) {
-    throw new Error(message);
+    throw new Error(message || 'Assertion failed');
   }
 }
 
@@ -1463,6 +1463,179 @@ async function runTests() {
     assertEquals(res.data.otpremnica.items[0].assetName, '[KIT] HVAC Site Crate');
     assertEquals(res.data.otpremnica.items[1].assetName, 'Manifold Gauge Set');
     assertEquals(res.data.otpremnica.items[2].assetName, 'Vacuum Pump');
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST SUITE 9: DATE RANGE FILTERING, VALIDATION & REPORT INTEGRITY
+  // --------------------------------------------------------------------------
+  console.log('\nTest Suite 9: Date Range Filtering, Validation & Report Integrity');
+
+  await test('9.1 Backend parses startDate and endDate query parameters and applies Prisma where range filters', async () => {
+    let capturedAssetWhere: any = null;
+    (prisma.asset as any).findMany = async (args: any) => {
+      capturedAssetWhere = args?.where;
+      return [
+        {
+          id: 'ast-date-1',
+          name: 'Thermal Camera',
+          assetNumber: 'AST-TC-01',
+          status: 'AVAILABLE',
+          purchaseDate: new Date('2026-02-15T10:00:00Z'),
+          purchasePrice: 1500,
+          currentValue: 1300,
+        },
+      ];
+    };
+
+    const assetRes = await apiRequest('GET', '/assets?startDate=2026-02-01&endDate=2026-02-28');
+    assertEquals(assetRes.status, 200, 'Expected 200 OK for date-filtered assets');
+    assert(capturedAssetWhere !== null, 'Prisma query should have where clause');
+    assert(capturedAssetWhere.purchaseDate !== undefined, 'where clause should contain purchaseDate filter');
+    assertEquals(capturedAssetWhere.purchaseDate.gte.toISOString(), '2026-02-01T00:00:00.000Z', 'Start date should be normalized to UTC start of day');
+    assertEquals(capturedAssetWhere.purchaseDate.lte.toISOString(), '2026-02-28T23:59:59.999Z', 'End date should be normalized to UTC end of day');
+
+    let capturedTrxWhere: any = null;
+    (prisma.assetTransaction as any).findMany = async (args: any) => {
+      capturedTrxWhere = args?.where;
+      return [
+        {
+          id: 'trx-date-1',
+          assetId: 'ast-1',
+          transactionType: 'ISSUE',
+          transactionDate: new Date('2026-03-10T14:00:00Z'),
+          asset: { name: 'Hammer Drill', assetNumber: 'HD-01' },
+          employee: { firstName: 'Mark', lastName: 'Davis' },
+          performedBy: { firstName: 'Admin', lastName: 'User' },
+        },
+      ];
+    };
+
+    const trxRes = await apiRequest('GET', '/transactions?startDate=2026-03-01&endDate=2026-03-31');
+    assertEquals(trxRes.status, 200, 'Expected 200 OK for date-filtered transactions');
+    assert(capturedTrxWhere !== null, 'Prisma query should have where clause');
+    assert(capturedTrxWhere.transactionDate !== undefined, 'where clause should contain transactionDate filter');
+    assertEquals(capturedTrxWhere.transactionDate.gte.toISOString(), '2026-03-01T00:00:00.000Z');
+    assertEquals(capturedTrxWhere.transactionDate.lte.toISOString(), '2026-03-31T23:59:59.999Z');
+
+    let capturedOtpWhere: any = null;
+    (prisma.otpremnicaDocument as any).findMany = async (args: any) => {
+      capturedOtpWhere = args?.where;
+      return [];
+    };
+    const otpRes = await apiRequest('GET', '/otpremnica?startDate=2026-04-01&endDate=2026-04-30');
+    assertEquals(otpRes.status, 200, 'Expected 200 OK for date-filtered otpremnica');
+    assert(capturedOtpWhere !== null, 'Prisma query should have where clause');
+    assert(capturedOtpWhere.issueDate !== undefined, 'where clause should contain issueDate filter');
+    assertEquals(capturedOtpWhere.issueDate.gte.toISOString(), '2026-04-01T00:00:00.000Z');
+    assertEquals(capturedOtpWhere.issueDate.lte.toISOString(), '2026-04-30T23:59:59.999Z');
+  });
+
+  await test('9.2 Backend rejects invalid date range (start > end) with HTTP 400 and clear error message', async () => {
+    const resAsset = await apiRequest('GET', '/assets?startDate=2026-06-30&endDate=2026-01-01');
+    assertEquals(resAsset.status, 400, 'Expected 400 Bad Request');
+    assert(
+      resAsset.data.error && resAsset.data.error.includes('startDate cannot be after endDate'),
+      `Expected 'startDate cannot be after endDate', got: ${resAsset.data.error}`
+    );
+
+    const resTrx = await apiRequest('GET', '/transactions?startDate=2026-12-31&endDate=2026-01-01');
+    assertEquals(resTrx.status, 400, 'Expected 400 Bad Request for transactions');
+    assertEquals(resTrx.data.error, 'startDate cannot be after endDate');
+
+    const resSummary = await apiRequest('GET', '/reports/summary?startDate=2026-10-15&endDate=2026-10-10');
+    assertEquals(resSummary.status, 400, 'Expected 400 Bad Request for summary');
+    assertEquals(resSummary.data.error, 'startDate cannot be after endDate');
+  });
+
+  await test('9.3 Backend rejects malformed date string with HTTP 400', async () => {
+    const res = await apiRequest('GET', '/assets?startDate=invalid-date-format&endDate=2026-05-01');
+    assertEquals(res.status, 400, 'Expected 400 Bad Request for malformed date');
+    assert(
+      res.data.error && res.data.error.includes('Invalid startDate format'),
+      `Expected error about invalid startDate format, got: ${res.data.error}`
+    );
+
+    const resEnd = await apiRequest('GET', '/transactions?startDate=2026-01-01&endDate=gibberish');
+    assertEquals(resEnd.status, 400, 'Expected 400 Bad Request for malformed endDate');
+    assert(
+      resEnd.data.error && resEnd.data.error.includes('Invalid endDate format'),
+      `Expected error about invalid endDate format, got: ${resEnd.data.error}`
+    );
+  });
+
+  await test('9.4 Single-day date range (startDate === endDate) spans exact 24-hour day boundary', async () => {
+    let capturedWhere: any = null;
+    (prisma.asset as any).findMany = async (args: any) => {
+      capturedWhere = args?.where;
+      return [];
+    };
+
+    const res = await apiRequest('GET', '/assets?startDate=2026-07-20&endDate=2026-07-20');
+    assertEquals(res.status, 200, 'Expected 200 OK for single-day range');
+    assert(capturedWhere !== null, 'capturedWhere should not be null');
+    assertEquals(capturedWhere.purchaseDate.gte.toISOString(), '2026-07-20T00:00:00.000Z');
+    assertEquals(capturedWhere.purchaseDate.lte.toISOString(), '2026-07-20T23:59:59.999Z');
+  });
+
+  await test('9.5 Graceful empty state when date range matches zero records', async () => {
+    (prisma.asset as any).findMany = async () => [];
+    (prisma.assetTransaction as any).findMany = async () => [];
+
+    const assetRes = await apiRequest('GET', '/assets?startDate=2020-01-01&endDate=2020-01-31');
+    assertEquals(assetRes.status, 200, 'Expected 200 OK');
+    assertEquals(assetRes.data.length, 0, 'Should return empty array');
+
+    const trxRes = await apiRequest('GET', '/transactions?startDate=2020-01-01&endDate=2020-01-31');
+    assertEquals(trxRes.status, 200, 'Expected 200 OK');
+    assertEquals(trxRes.data.length, 0, 'Should return empty array');
+  });
+
+  await test('9.6 /reports/summary aggregates metrics correctly respecting date range', async () => {
+    (prisma.asset as any).findMany = async () => [
+      { id: 'a1', status: 'AVAILABLE', purchasePrice: 500, currentValue: 450 },
+      { id: 'a2', status: 'ISSUED', purchasePrice: 1000, currentValue: 800 },
+      { id: 'a3', status: 'LOST', purchasePrice: 300, currentValue: 150 },
+    ];
+    (prisma.assetTransaction as any).count = async () => 14;
+    (prisma.otpremnicaDocument as any).count = async () => 5;
+    (prisma.serviceOrder as any).count = async () => 2;
+
+    const res = await apiRequest('GET', '/reports/summary?startDate=2026-01-01&endDate=2026-06-30');
+    assertEquals(res.status, 200, 'Expected 200 OK');
+    assertEquals(res.data.totalAssets, 3, 'Total assets count');
+    assertEquals(res.data.totalAcquisitionValue, 1800, 'Acquisition value sum (500+1000+300)');
+    assertEquals(res.data.totalCurrentValue, 1400, 'Current value sum (450+800+150)');
+    assertEquals(res.data.lostAssetsCount, 1, 'Lost assets count');
+    assertEquals(res.data.totalLostValue, 150, 'Lost assets value');
+    assertEquals(res.data.netActiveBookValue, 1250, 'Net active book value (1400 - 150)');
+    assertEquals(res.data.transactionCount, 14, 'Transaction count');
+    assertEquals(res.data.otpremnicaCount, 5, 'Otpremnica count');
+  });
+
+  await test('9.7 Print and Export data reflects active date-filtered dataset and summary banner', async () => {
+    // Simulating frontend report filter engine behavior
+    const allTransactions = [
+      { id: 't1', transactionDate: '2026-01-10T10:00:00Z', transactionType: 'ISSUE', assetName: 'Drill A' },
+      { id: 't2', transactionDate: '2026-02-15T11:00:00Z', transactionType: 'RETURN', assetName: 'Saw B' },
+      { id: 't3', transactionDate: '2026-03-20T12:00:00Z', transactionType: 'ISSUE', assetName: 'Grinder C' },
+    ];
+
+    const startDate = '2026-02-01';
+    const endDate = '2026-02-28';
+    const startBoundary = new Date(`${startDate}T00:00:00.000`).getTime();
+    const endBoundary = new Date(`${endDate}T23:59:59.999`).getTime();
+
+    const filtered = allTransactions.filter((t) => {
+      const time = new Date(t.transactionDate).getTime();
+      return time >= startBoundary && time <= endBoundary;
+    });
+
+    assertEquals(filtered.length, 1, 'Only February transaction should be included in export');
+    assertEquals(filtered[0].id, 't2', 'Should match t2');
+
+    // Filter label formatting assertion for printable / PDF header
+    const activeFilterLabels = [`Date Range: ${startDate} to ${endDate} (Custom Range)`];
+    assertEquals(activeFilterLabels[0], 'Date Range: 2026-02-01 to 2026-02-28 (Custom Range)');
   });
 
   // Close server

@@ -3,8 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "postinstall": "npx prisma generate --schema ./prisma/schema.prisma",
-    "build": "npx prisma generate --schema ./prisma/schema.prisma && cd frontend && npm install && npm run build",
+    "postinstall": "npx -y prisma@5.22.0 generate --schema ./prisma/schema.prisma",
+    "build": "npx -y prisma@5.22.0 generate --schema ./prisma/schema.prisma && cd frontend && npm install && npm run build",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev"
   },

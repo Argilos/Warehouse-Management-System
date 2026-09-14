@@ -54,6 +54,146 @@ export const ReportsModule: React.FC = () => {
     });
   };
 
+  // Helper to format Date into YYYY-MM-DD input string
+  const formatDateInput = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Helper to compute preset dates
+  const getPresetDates = (preset: string): { start: string; end: string } => {
+    const now = new Date();
+    switch (preset) {
+      case 'TODAY': {
+        const dStr = formatDateInput(now);
+        return { start: dStr, end: dStr };
+      }
+      case 'LAST_7_DAYS': {
+        const past = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+        return { start: formatDateInput(past), end: formatDateInput(now) };
+      }
+      case 'LAST_30_DAYS': {
+        const past = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+        return { start: formatDateInput(past), end: formatDateInput(now) };
+      }
+      case 'THIS_MONTH': {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { start: formatDateInput(startOfMonth), end: formatDateInput(now) };
+      }
+      case 'LAST_MONTH': {
+        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+        return { start: formatDateInput(startOfLastMonth), end: formatDateInput(endOfLastMonth) };
+      }
+      case 'THIS_YEAR': {
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        return { start: formatDateInput(startOfYear), end: formatDateInput(now) };
+      }
+      default:
+        return { start: '', end: '' };
+    }
+  };
+
+  // Helper to update URL search parameters without page reload
+  const updateUrlDateRange = (preset: string, start: string, end: string) => {
+    try {
+      const url = new URL(window.location.href);
+      if (preset && preset !== 'ALL') {
+        url.searchParams.set('datePreset', preset);
+      } else {
+        url.searchParams.delete('datePreset');
+      }
+
+      if (start) {
+        url.searchParams.set('startDate', start);
+      } else {
+        url.searchParams.delete('startDate');
+      }
+
+      if (end) {
+        url.searchParams.set('endDate', end);
+      } else {
+        url.searchParams.delete('endDate');
+      }
+
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // safe fallback if not in standard browser context
+    }
+  };
+
+  // Synchronize state with URL search parameters (load on mount and on popstate back/forward)
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlPreset = params.get('datePreset') as any;
+    const urlStart = params.get('startDate');
+    const urlEnd = params.get('endDate');
+
+    if (urlPreset) {
+      setDateRangePreset(urlPreset);
+      if (!urlStart && !urlEnd && urlPreset !== 'ALL' && urlPreset !== 'CUSTOM') {
+        const computed = getPresetDates(urlPreset);
+        setStartDate(computed.start);
+        setEndDate(computed.end);
+      }
+    }
+    if (urlStart) {
+      setStartDate(urlStart);
+    }
+    if (urlEnd) {
+      setEndDate(urlEnd);
+    }
+
+    const handlePopState = () => {
+      const p = new URLSearchParams(window.location.search);
+      const popPreset = (p.get('datePreset') as any) || 'ALL';
+      const popStart = p.get('startDate') || '';
+      const popEnd = p.get('endDate') || '';
+      setDateRangePreset(popPreset);
+      setStartDate(popStart);
+      setEndDate(popEnd);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Handlers for date range changes
+  const handlePresetChange = (preset: string) => {
+    setDateRangePreset(preset as any);
+    if (preset === 'ALL') {
+      setStartDate('');
+      setEndDate('');
+      updateUrlDateRange('ALL', '', '');
+    } else if (preset === 'CUSTOM') {
+      updateUrlDateRange('CUSTOM', startDate, endDate);
+    } else {
+      const dates = getPresetDates(preset);
+      setStartDate(dates.start);
+      setEndDate(dates.end);
+      updateUrlDateRange(preset, dates.start, dates.end);
+    }
+  };
+
+  const handleStartDateChange = (val: string) => {
+    setStartDate(val);
+    setDateRangePreset('CUSTOM');
+    updateUrlDateRange('CUSTOM', val, endDate);
+  };
+
+  const handleEndDateChange = (val: string) => {
+    setEndDate(val);
+    setDateRangePreset('CUSTOM');
+    updateUrlDateRange('CUSTOM', startDate, val);
+  };
+
+  const isDateRangeInvalid = useMemo(() => {
+    if (!startDate || !endDate) return false;
+    return new Date(startDate).getTime() > new Date(endDate).getTime();
+  }, [startDate, endDate]);
+
   // Categories & Manufacturers Options
   const categories = useMemo(() => Array.from(new Set(assets.map(a => a.category))), [assets]);
   const manufacturers = useMemo(() => Array.from(new Set(assets.map(a => a.manufacturer))), [assets]);
@@ -73,43 +213,27 @@ export const ReportsModule: React.FC = () => {
     setDateRangePreset('ALL');
     setStartDate('');
     setEndDate('');
+    updateUrlDateRange('ALL', '', '');
   };
 
-  // Filter Computation Logic for Date Presets
-  const checkDateInRange = (dateStr: string) => {
-    if (dateRangePreset === 'ALL') return true;
-    const itemDate = new Date(dateStr).getTime();
-    const now = new Date();
+  // Filter Computation Logic for Date Presets & Custom Range
+  const checkDateInRange = (dateStr?: string | Date | null) => {
+    if (!dateStr) return false;
+    if (dateRangePreset === 'ALL' && !startDate && !endDate) return true;
 
-    if (dateRangePreset === 'TODAY') {
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-      return itemDate >= todayStart;
+    const itemDate = new Date(dateStr).getTime();
+    if (isNaN(itemDate)) return true;
+
+    if (startDate) {
+      const startBoundary = new Date(`${startDate}T00:00:00.000`).getTime();
+      if (itemDate < startBoundary) return false;
     }
-    if (dateRangePreset === 'LAST_7_DAYS') {
-      return itemDate >= now.getTime() - 7 * 24 * 3600 * 1000;
+
+    if (endDate) {
+      const endBoundary = new Date(`${endDate}T23:59:59.999`).getTime();
+      if (itemDate > endBoundary) return false;
     }
-    if (dateRangePreset === 'LAST_30_DAYS') {
-      return itemDate >= now.getTime() - 30 * 24 * 3600 * 1000;
-    }
-    if (dateRangePreset === 'THIS_MONTH') {
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-      return itemDate >= monthStart;
-    }
-    if (dateRangePreset === 'LAST_MONTH') {
-      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
-      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).getTime();
-      return itemDate >= lastMonthStart && itemDate <= lastMonthEnd;
-    }
-    if (dateRangePreset === 'THIS_YEAR') {
-      const yearStart = new Date(now.getFullYear(), 0, 1).getTime();
-      return itemDate >= yearStart;
-    }
-    if (dateRangePreset === 'CUSTOM') {
-      let valid = true;
-      if (startDate) valid = valid && itemDate >= new Date(startDate).getTime();
-      if (endDate) valid = valid && itemDate <= new Date(endDate).getTime() + 86400000;
-      return valid;
-    }
+
     return true;
   };
 
@@ -191,6 +315,23 @@ export const ReportsModule: React.FC = () => {
     });
   }, [transactions, searchQuery, selectedEmployeeId, selectedProjectId, selectedTransactionType, dateRangePreset, startDate, endDate]);
 
+  // Filtered Otpremnica Documents Computation
+  const filteredOtpremnica = useMemo(() => {
+    return otpremnicaDocuments.filter((doc) => {
+      const query = searchQuery.trim().toLowerCase();
+      const matchesQuery = !query || (
+        doc.documentNumber.toLowerCase().includes(query) ||
+        (doc.employeeName && doc.employeeName.toLowerCase().includes(query)) ||
+        (doc.projectName && doc.projectName.toLowerCase().includes(query)) ||
+        (doc.notes && doc.notes.toLowerCase().includes(query))
+      );
+      const matchesEmp = selectedEmployeeId === 'ALL' || doc.employeeId === selectedEmployeeId;
+      const matchesProj = selectedProjectId === 'ALL' || doc.projectId === selectedProjectId;
+      const matchesDate = checkDateInRange(doc.issueDate || doc.createdAt);
+      return matchesQuery && matchesEmp && matchesProj && matchesDate;
+    });
+  }, [otpremnicaDocuments, searchQuery, selectedEmployeeId, selectedProjectId, dateRangePreset, startDate, endDate]);
+
   // Summary Metrics
   const totalOriginalVal = filteredAssets.reduce((sum, a) => sum + a.purchasePrice, 0);
   const totalCurrentVal = filteredAssets.reduce((sum, a) => sum + a.currentValue, 0);
@@ -213,16 +354,57 @@ export const ReportsModule: React.FC = () => {
       if (proj) labels.push(`${t('Project')}: ${proj.name}`);
     }
     if (selectedLocation !== 'ALL') labels.push(`${t('Location')}: ${selectedLocation}`);
-    if (dateRangePreset !== 'ALL') labels.push(`${t('Date Range')}: ${dateRangePreset}`);
+
+    if (dateRangePreset !== 'ALL' || startDate || endDate) {
+      let dateDesc = '';
+      if (startDate && endDate) {
+        dateDesc = `${startDate} ${t('to')} ${endDate}`;
+      } else if (startDate) {
+        dateDesc = `${t('From')} ${startDate}`;
+      } else if (endDate) {
+        dateDesc = `${t('Until')} ${endDate}`;
+      }
+      const presetLabel = dateRangePreset !== 'CUSTOM' ? t(dateRangePreset.replace(/_/g, ' ')) : t('Custom Range');
+      labels.push(`${t('Date Range')}: ${dateDesc ? `${dateDesc} (${presetLabel})` : presetLabel}`);
+    }
+
     if (activePreset === 'ASSET_MOVEMENT_HISTORY' && selectedTransactionType !== 'ALL') {
       labels.push(`${t('Action')}: ${selectedTransactionType}`);
     }
     return labels;
-  }, [searchQuery, selectedCategory, selectedStatus, selectedEmployeeId, selectedProjectId, selectedLocation, dateRangePreset, activePreset, selectedTransactionType, employees, projects, t]);
+  }, [searchQuery, selectedCategory, selectedStatus, selectedEmployeeId, selectedProjectId, selectedLocation, dateRangePreset, startDate, endDate, activePreset, selectedTransactionType, employees, projects, t]);
 
   // Export PDF
   const handleExportPDF = () => {
-    addAuditLog('Report', activePreset, 'PDF_EXPORTED', { preset: activePreset, recordCount: filteredAssets.length });
+    const currentCount = activePreset === 'ASSET_MOVEMENT_HISTORY'
+      ? filteredTransactions.length
+      : activePreset === 'OTPREMNICA_ARCHIVE'
+        ? filteredOtpremnica.length
+        : filteredAssets.length;
+
+    addAuditLog('Report', activePreset, 'PDF_EXPORTED', { preset: activePreset, recordCount: currentCount });
+
+    if (activePreset === 'OTPREMNICA_ARCHIVE') {
+      const columns = [
+        { header: 'Document No.', dataKey: 'documentNumber' },
+        { header: 'Date', dataKey: 'issueDate' },
+        { header: 'Employee', dataKey: 'employeeName' },
+        { header: 'Department', dataKey: 'employeeDepartment' },
+        { header: 'Project', dataKey: 'projectName' },
+        { header: 'Items Count', dataKey: 'itemsCount' },
+        { header: 'Issued By', dataKey: 'createdByName' },
+      ];
+      const data = filteredOtpremnica.map((doc) => ({
+        ...doc,
+        itemsCount: (doc.items || []).length,
+        employeeName: doc.employeeName || '—',
+        employeeDepartment: doc.employeeDepartment || 'Field Ops',
+        projectName: doc.projectName || 'General Issue',
+        createdByName: doc.createdByName || 'Warehouse Manager',
+      }));
+      exportReportPDF('Otpremnice Equipment Handover Archive Report', columns, data, activeFilterLabels);
+      return;
+    }
 
     if (activePreset === 'ASSET_MOVEMENT_HISTORY') {
       const columns = [
@@ -271,6 +453,21 @@ export const ReportsModule: React.FC = () => {
   // Export CSV
   const handleExportCSV = () => {
     addAuditLog('Report', activePreset, 'CSV_EXPORTED', { preset: activePreset });
+
+    if (activePreset === 'OTPREMNICA_ARCHIVE') {
+      const data = filteredOtpremnica.map((doc) => ({
+        DocumentNumber: doc.documentNumber,
+        IssueDate: doc.issueDate,
+        Employee: doc.employeeName || 'N/A',
+        Department: doc.employeeDepartment || 'Field Ops',
+        Project: doc.projectName || 'General Issue',
+        ItemsCount: (doc.items || []).length,
+        IssuedBy: doc.createdByName || 'Warehouse Manager',
+        Notes: doc.notes || '',
+      }));
+      exportToCSV('Otpremnice_Archive_Report', data);
+      return;
+    }
 
     if (activePreset === 'ASSET_MOVEMENT_HISTORY') {
       const data = filteredTransactions.map(trx => ({
@@ -450,19 +647,100 @@ export const ReportsModule: React.FC = () => {
             </select>
           </div>
 
-          {/* Date Range Preset Filter */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">{t('Date Range Preset')}</label>
-            <select value={dateRangePreset} onChange={(e) => setDateRangePreset(e.target.value as any)} className="w-full bg-white border border-surface-200 rounded-lg px-2.5 py-1.5 text-xs outline-none">
-              <option value="ALL">{t('All Time')}</option>
-              <option value="TODAY">{t('Today')}</option>
-              <option value="LAST_7_DAYS">{t('Last 7 Days')}</option>
-              <option value="LAST_30_DAYS">{t('Last 30 Days')}</option>
-              <option value="THIS_MONTH">{t('This Month')}</option>
-              <option value="LAST_MONTH">{t('Last Month')}</option>
-              <option value="THIS_YEAR">{t('This Year')}</option>
-              <option value="CUSTOM">{t('Custom Range')}</option>
-            </select>
+          {/* Date Range Controls */}
+          <div className="space-y-1.5 sm:col-span-2 md:col-span-2 lg:col-span-2 bg-slate-50/70 p-2.5 rounded-lg border border-surface-200">
+            <div className="flex items-center justify-between">
+              <label className="block text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-brand-600" />
+                <span>{t('Date Range Filter')}</span>
+              </label>
+              {(dateRangePreset !== 'ALL' || startDate || endDate) && (
+                <button
+                  type="button"
+                  onClick={() => handlePresetChange('ALL')}
+                  className="text-[10px] text-brand-600 hover:text-brand-800 font-semibold"
+                >
+                  {t('Clear Date Range')}
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <select
+                  value={dateRangePreset}
+                  onChange={(e) => handlePresetChange(e.target.value)}
+                  className="w-full bg-white border border-surface-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-brand-400 font-medium"
+                >
+                  <option value="ALL">{t('All Time')}</option>
+                  <option value="TODAY">{t('Today')}</option>
+                  <option value="LAST_7_DAYS">{t('Last 7 Days')}</option>
+                  <option value="LAST_30_DAYS">{t('Last 30 Days')}</option>
+                  <option value="THIS_MONTH">{t('This Month')}</option>
+                  <option value="LAST_MONTH">{t('Last Month')}</option>
+                  <option value="THIS_YEAR">{t('This Year')}</option>
+                  <option value="CUSTOM">{t('Custom Range')}</option>
+                </select>
+              </div>
+
+              <div>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
+                  aria-label={t('Start Date')}
+                  title={t('Start Date')}
+                  className={`w-full bg-white border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-brand-400 ${
+                    isDateRangeInvalid ? 'border-rose-400 bg-rose-50/50' : 'border-surface-200'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => handleEndDateChange(e.target.value)}
+                  aria-label={t('End Date')}
+                  title={t('End Date')}
+                  className={`w-full bg-white border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-brand-400 ${
+                    isDateRangeInvalid ? 'border-rose-400 bg-rose-50/50' : 'border-surface-200'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Quick Presets Pills */}
+            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+              <span className="text-[10px] text-slate-400 font-medium mr-1">{t('Quick Presets')}:</span>
+              {[
+                { id: 'ALL', label: t('All Time') },
+                { id: 'LAST_7_DAYS', label: t('Last 7 Days') },
+                { id: 'LAST_30_DAYS', label: t('Last 30 Days') },
+                { id: 'THIS_MONTH', label: t('This Month') },
+                { id: 'THIS_YEAR', label: t('This Year') },
+              ].map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handlePresetChange(p.id)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all ${
+                    dateRangePreset === p.id
+                      ? 'bg-brand-50 border-brand-300 text-brand-700 shadow-2xs'
+                      : 'bg-white border-surface-200 text-slate-500 hover:bg-surface-50'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {isDateRangeInvalid && (
+              <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 mt-1">
+                <span>⚠️</span>
+                <span>{t('Start date cannot be after end date')}</span>
+              </p>
+            )}
           </div>
 
           {/* Transaction Type Filter */}
@@ -498,7 +776,7 @@ export const ReportsModule: React.FC = () => {
             <div className="text-right text-xs text-slate-600">
               <p>{t('Date')}: <span className="font-semibold text-slate-900">{new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></p>
               <p>{t('Records')}: <span className="font-bold text-slate-900">
-                {activePreset === 'ASSET_MOVEMENT_HISTORY' ? filteredTransactions.length : activePreset === 'OTPREMNICA_ARCHIVE' ? otpremnicaDocuments.length : filteredAssets.length}
+                {activePreset === 'ASSET_MOVEMENT_HISTORY' ? filteredTransactions.length : activePreset === 'OTPREMNICA_ARCHIVE' ? filteredOtpremnica.length : filteredAssets.length}
               </span></p>
             </div>
           </div>
@@ -523,7 +801,7 @@ export const ReportsModule: React.FC = () => {
           <div className="glass-card p-4">
             <p className="text-[11px] font-semibold text-slate-400 uppercase">{t('Filtered Record Count')}</p>
             <h3 className="text-xl font-extrabold text-slate-800 mt-1">
-              {activePreset === 'ASSET_MOVEMENT_HISTORY' ? filteredTransactions.length : activePreset === 'OTPREMNICA_ARCHIVE' ? otpremnicaDocuments.length : filteredAssets.length}
+              {activePreset === 'ASSET_MOVEMENT_HISTORY' ? filteredTransactions.length : activePreset === 'OTPREMNICA_ARCHIVE' ? filteredOtpremnica.length : filteredAssets.length}
             </h3>
           </div>
 
@@ -550,7 +828,7 @@ export const ReportsModule: React.FC = () => {
           /* OTPREMNICE ARCHIVE VIEW */
           <div className="glass-panel p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-800">{t('Otpremnica Equipment Handover Archive')} ({otpremnicaDocuments.length})</h3>
+              <h3 className="font-bold text-sm text-slate-800">{t('Otpremnica Equipment Handover Archive')} ({filteredOtpremnica.length})</h3>
             </div>
 
             <div className="overflow-x-auto">
@@ -568,14 +846,19 @@ export const ReportsModule: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-100 text-slate-700">
-                  {otpremnicaDocuments.length === 0 ? (
+                  {filteredOtpremnica.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                        {t('No Otpremnica handover receipts generated yet.')}
+                        <p>{t('No Otpremnica handover receipts generated yet.')}</p>
+                        {(dateRangePreset !== 'ALL' || startDate || endDate) && (
+                          <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                            {t('No records found matching selected date range and criteria.')}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   ) : (
-                    otpremnicaDocuments.map((doc) => {
+                    filteredOtpremnica.map((doc) => {
                       const isExpanded = expandedDocIds.has(doc.id);
                       const items = doc.items || [];
 
@@ -743,7 +1026,12 @@ export const ReportsModule: React.FC = () => {
                   {filteredTransactions.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                        {t('No movement history records found matching selected filters.')}
+                        <p>{t('No movement history records found matching selected filters.')}</p>
+                        {(dateRangePreset !== 'ALL' || startDate || endDate) && (
+                          <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                            {t('No records found matching selected date range and criteria.')}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   ) : (
@@ -793,7 +1081,12 @@ export const ReportsModule: React.FC = () => {
                   {filteredAssets.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                        {t('No assets found matching the selected report criteria.')}
+                        <p>{t('No assets found matching the selected report criteria.')}</p>
+                        {(dateRangePreset !== 'ALL' || startDate || endDate) && (
+                          <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                            {t('No records found matching selected date range and criteria.')}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   ) : (
