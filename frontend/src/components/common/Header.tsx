@@ -14,7 +14,8 @@ export const Header: React.FC = () => {
     currentUser, activeRole, notifications, markNotificationAsRead,
     globalSearch, setGlobalSearch, setActiveModule, setSelectedAssetFor360,
     assets, employees, maintenanceTasks, maintenancePlans, toolBoxes,
-    serviceOrders, calibrations, projects, suppliers
+    serviceOrders, calibrations, projects, suppliers,
+    otpremnicaDocuments, setSelectedOtpremnicaForModal, setNotificationToast
   } = useWarehouseStore();
 
   const { t } = useLanguageStore();
@@ -170,6 +171,121 @@ export const Header: React.FC = () => {
   const handleNavigateModule = (moduleName: string) => {
     setActiveModule(moduleName);
     setShowSearchDropdown(false);
+  };
+
+  const handleNotificationClick = (n: any) => {
+    // 1. Mark as read (reusing existing store function)
+    if (!n.isRead) {
+      markNotificationAsRead(n.id);
+    }
+
+    // 2. Close notification dropdown
+    setShowNotifications(false);
+
+    // 3. Resolve and navigate to target destination
+    const entityType = n.entityType?.toUpperCase();
+    const entityId = n.entityId;
+
+    if (entityType && entityId) {
+      switch (entityType) {
+        case 'ASSET': {
+          const foundAsset = assets.find(a => a.id === entityId || a.assetNumber === entityId);
+          if (foundAsset) {
+            setSelectedAssetFor360(foundAsset);
+            setActiveModule('assets');
+          } else {
+            setNotificationToast(t('This asset is no longer available in the warehouse inventory.'));
+          }
+          break;
+        }
+
+        case 'OTPREMNICA': {
+          const foundDoc = otpremnicaDocuments.find(d => d.id === entityId || d.documentNumber === entityId);
+          if (foundDoc) {
+            setSelectedOtpremnicaForModal(foundDoc);
+          } else {
+            setNotificationToast(t('This Otpremnica delivery note is no longer available.'));
+          }
+          break;
+        }
+
+        case 'SERVICE_ORDER': {
+          const foundOrder = serviceOrders.find(s => s.id === entityId);
+          if (foundOrder) {
+            setActiveModule('maintenance');
+          } else {
+            const linkedAsset = assets.find(a => a.id === entityId);
+            if (linkedAsset) {
+              setSelectedAssetFor360(linkedAsset);
+              setActiveModule('assets');
+            } else {
+              setNotificationToast(t('This repair service order is no longer available.'));
+            }
+          }
+          break;
+        }
+
+        case 'MAINTENANCE_TASK': {
+          const foundTask = maintenanceTasks.find(m => m.id === entityId || m.taskNumber === entityId);
+          if (foundTask) {
+            setActiveModule('preventive-maintenance');
+          } else {
+            setNotificationToast(t('This maintenance task is no longer available.'));
+          }
+          break;
+        }
+
+        case 'CALIBRATION': {
+          const foundCal = calibrations.find(c => c.id === entityId || c.certificateNumber === entityId);
+          if (foundCal) {
+            setActiveModule('calibration');
+          } else {
+            setNotificationToast(t('This calibration record is no longer available.'));
+          }
+          break;
+        }
+
+        case 'TOOLBOX': {
+          const foundBox = toolBoxes.find(b => b.id === entityId || b.boxNumber === entityId);
+          if (foundBox) {
+            setActiveModule('toolboxes');
+          } else {
+            setNotificationToast(t('This tool box kit is no longer available or was dismantled.'));
+          }
+          break;
+        }
+
+        default: {
+          fallbackNavigate(n);
+          break;
+        }
+      }
+    } else {
+      fallbackNavigate(n);
+    }
+  };
+
+  const fallbackNavigate = (n: any) => {
+    // Check if an asset is mentioned in the message or title
+    const matchedAsset = assets.find(a => n.message?.includes(a.assetNumber) || n.message?.includes(a.name));
+    if (matchedAsset) {
+      setSelectedAssetFor360(matchedAsset);
+      setActiveModule('assets');
+      return;
+    }
+
+    const typeUpper = (n.type || '').toUpperCase();
+    if (typeUpper === 'SERVICE') {
+      setActiveModule('maintenance');
+    } else if (typeUpper === 'CALIBRATION') {
+      setActiveModule('calibration');
+    } else if (typeUpper === 'OVERDUE') {
+      setActiveModule('issuing');
+    } else if (typeUpper === 'TOOLBOX') {
+      setActiveModule('toolboxes');
+    } else if (typeUpper === 'OTPREMNICA') {
+      setActiveModule('issuing');
+    }
   };
 
   return (
@@ -528,7 +644,7 @@ export const Header: React.FC = () => {
                       notifications.map((n) => (
                         <div
                           key={n.id}
-                          onClick={() => markNotificationAsRead(n.id)}
+                          onClick={() => handleNotificationClick(n)}
                           className={`p-3 text-xs cursor-pointer transition-colors ${n.isRead
                             ? 'bg-white text-slate-400'
                             : 'bg-brand-50 text-slate-700 hover:bg-brand-100'

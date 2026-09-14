@@ -348,6 +348,8 @@ router.get('/initial-data', async (req: Request, res: Response) => {
             title: 'Equipment Damage Dispatched to Repair',
             message: 'DeWalt Rotary Hammer Drill (AST-POW-001) reported damaged with slipping chuck mechanism and dispatched to Bosch Repair Services.',
             isRead: false,
+            entityType: 'SERVICE_ORDER',
+            entityId: null,
           },
           {
             userId: firstUser.id,
@@ -355,6 +357,8 @@ router.get('/initial-data', async (req: Request, res: Response) => {
             title: 'Calibration Expiration Warning (Due in 14 Days)',
             message: 'Fluke 87V Digital Multimeter (AST-MEAS-004) precision calibration expires on 2026-09-01. Please schedule vendor testing.',
             isRead: false,
+            entityType: 'CALIBRATION',
+            entityId: null,
           },
           {
             userId: firstUser.id,
@@ -362,6 +366,8 @@ router.get('/initial-data', async (req: Request, res: Response) => {
             title: 'Overdue Equipment Loan Alert',
             message: 'Bosch Angle Grinder 4.5 inch (AST-POW-012) issued to John Doe is past its expected return date (2026-08-10).',
             isRead: false,
+            entityType: 'ASSET',
+            entityId: null,
           },
         ]
       });
@@ -396,7 +402,7 @@ router.get('/initial-data', async (req: Request, res: Response) => {
         }
       }
 
-      for (const item of Array.from(dueAssetMap.values())) {
+      for (const [assetId, item] of Array.from(dueAssetMap.entries())) {
         const diffDays = (item.nextCalibrationDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
         if (diffDays >= 0 && diffDays <= 30) {
           const exists = notifications.some(
@@ -414,6 +420,8 @@ router.get('/initial-data', async (req: Request, res: Response) => {
                 title: `Calibration Expiration Warning (${item.assetName})`,
                 message: `Precision calibration for ${item.assetName} (${item.certNum}) expires on ${item.nextCalibrationDate.toISOString().slice(0, 10)} (due in ${daysLeft} days).`,
                 isRead: false,
+                entityType: 'ASSET',
+                entityId: assetId,
               },
             });
             notifications.unshift(createdNotif);
@@ -436,6 +444,8 @@ router.get('/initial-data', async (req: Request, res: Response) => {
                   title: `Overdue Loan Alert (${trx.asset.name})`,
                   message: `Equipment ${trx.asset.name} (${assetNum}) issued to ${empName} was expected back on ${retDate.toISOString().slice(0, 10)} and is past due.`,
                   isRead: false,
+                  entityType: 'ASSET',
+                  entityId: trx.assetId,
                 },
               });
               notifications.unshift(createdNotif);
@@ -682,6 +692,8 @@ router.get('/initial-data', async (req: Request, res: Response) => {
                   title,
                   message,
                   isRead: false,
+                  entityType: 'MAINTENANCE_TASK',
+                  entityId: task.id,
                 },
               });
               notifications.unshift(createdNotif);
@@ -1089,6 +1101,8 @@ router.post('/transactions/issue', async (req: Request, res: Response) => {
           title: `Equipment Loan Issued: ${trx.asset.name}`,
           message: `${trx.asset.name} (${trx.asset.assetNumber}) issued to ${trx.employee ? `${trx.employee.firstName} ${trx.employee.lastName}` : 'Field Staff'} until ${expectedReturnDate || 'Expected Return Date'}.`,
           isRead: false,
+          entityType: 'ASSET',
+          entityId: trx.assetId,
         },
       });
 
@@ -1105,6 +1119,20 @@ router.post('/transactions/issue', async (req: Request, res: Response) => {
         notes,
         createdById: user.id,
       });
+
+      if (otpremnicaDoc) {
+        await prisma.notification.create({
+          data: {
+            userId: user.id,
+            type: 'OTPREMNICA',
+            title: `Delivery Note Generated: ${otpremnicaDoc.documentNumber}`,
+            message: `Delivery Note (Otpremnica) ${otpremnicaDoc.documentNumber} generated for ${createdTransactions.length} equipment item(s).`,
+            isRead: false,
+            entityType: 'OTPREMNICA',
+            entityId: otpremnicaDoc.id,
+          },
+        });
+      }
     }
 
     res.status(201).json({
@@ -1223,6 +1251,8 @@ router.post('/transactions/return', async (req: Request, res: Response) => {
           title: `Equipment Returned Damaged: ${targetAsset.name}`,
           message: `${targetAsset.name} (${targetAsset.assetNumber}) was returned damaged. Reactive Service Order & Maintenance Task automatically logged.`,
           isRead: false,
+          entityType: 'SERVICE_ORDER',
+          entityId: autoServiceOrder.id,
         },
       });
 
@@ -1243,6 +1273,8 @@ router.post('/transactions/return', async (req: Request, res: Response) => {
           title: `Equipment Reported Lost on Return: ${targetAsset.name}`,
           message: `${targetAsset.name} (${targetAsset.assetNumber}) was reported lost/missing during equipment return. Asset value written off.`,
           isRead: false,
+          entityType: 'ASSET',
+          entityId: targetAsset.id,
         },
       });
 
@@ -1615,6 +1647,21 @@ router.post('/toolboxes/issue', async (req: Request, res: Response) => {
       });
     }
 
+    if (user) {
+      const targetEmployee = employeeId ? await prisma.employee.findUnique({ where: { id: employeeId } }) : null;
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'TOOLBOX',
+          title: `Tool Box Issued: ${box.name}`,
+          message: `Tool Box kit ${box.name} (${box.boxNumber}) containing ${box.items.length} tools issued${targetEmployee ? ` to ${targetEmployee.firstName} ${targetEmployee.lastName}` : ''}.`,
+          isRead: false,
+          entityType: 'TOOLBOX',
+          entityId: box.id,
+        },
+      });
+    }
+
     res.json({
       message: 'ToolBox issued successfully',
       toolBox: updatedBox,
@@ -1707,6 +1754,21 @@ router.post('/toolboxes/:id/dismantle', async (req: Request, res: Response) => {
     await prisma.toolBox.delete({
       where: { id },
     });
+
+    const user = await prisma.user.findFirst();
+    if (user) {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'TOOLBOX',
+          title: `Tool Box Dismantled: ${box.name}`,
+          message: `Tool Box kit ${box.name} (${box.boxNumber}) was dismantled and tools released to general inventory.`,
+          isRead: false,
+          entityType: 'TOOLBOX',
+          entityId: id,
+        },
+      });
+    }
 
     res.json({ message: 'ToolBox dismantled successfully' });
   } catch (error) {
@@ -1811,6 +1873,8 @@ router.post('/service-orders', async (req: Request, res: Response) => {
           title: `Repair Service Dispatched: ${newOrder.asset.name}`,
           message: `Equipment ${newOrder.asset.assetNumber} reported damaged and dispatched for repair. Description: ${problemDescription}`,
           isRead: false,
+          entityType: 'SERVICE_ORDER',
+          entityId: newOrder.id,
         },
       });
     }
@@ -1869,6 +1933,8 @@ router.put('/service-orders/:id/dispatch', async (req: Request, res: Response) =
           title: `Repair Service Dispatched: ${updated.asset.name}`,
           message: `Equipment ${updated.asset.assetNumber} dispatched for repair to ${updated.supplier?.companyName || 'Internal Workshop'}.`,
           isRead: false,
+          entityType: 'SERVICE_ORDER',
+          entityId: updated.id,
         },
       });
 
@@ -2031,6 +2097,8 @@ router.post('/calibrations', async (req: Request, res: Response) => {
           title: `Calibration Certificate Completed: ${newRecord.asset.name}`,
           message: `Certificate #${newRecord.certificateNumber} submitted for ${newRecord.asset.name} (${newRecord.result}). Next calibration due on ${newRecord.nextCalibrationDate.toISOString().slice(0, 10)}.`,
           isRead: false,
+          entityType: 'CALIBRATION',
+          entityId: newRecord.id,
         },
       });
     }
@@ -2560,6 +2628,8 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
             title: `Maintenance Failed: ${task.asset.name}`,
             message: `Maintenance task [${task.taskNumber}] for ${task.asset.name} was marked as FAILED. Tool remains out of service.`,
             isRead: false,
+            entityType: 'MAINTENANCE_TASK',
+            entityId: task.id,
           },
         });
         await prisma.auditLog.create({
@@ -2621,6 +2691,8 @@ router.put('/maintenance-tasks/:id/complete', async (req: Request, res: Response
           title: `Preventive Maintenance Completed: ${task.asset.name}`,
           message: `Maintenance task [${task.taskNumber}] completed successfully with result PASSED. Total Cost: €${totalCost.toFixed(2)}.`,
           isRead: false,
+          entityType: 'MAINTENANCE_TASK',
+          entityId: task.id,
         },
       });
 
@@ -2740,6 +2812,21 @@ router.post('/otpremnica/generate', async (req: Request, res: Response) => {
       notes,
       createdById,
     });
+
+    const user = createdById ? await prisma.user.findUnique({ where: { id: createdById } }) : await prisma.user.findFirst();
+    if (user) {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          type: 'OTPREMNICA',
+          title: `Delivery Note Generated: ${doc.documentNumber}`,
+          message: `Delivery Note (Otpremnica) ${doc.documentNumber} generated.`,
+          isRead: false,
+          entityType: 'OTPREMNICA',
+          entityId: doc.id,
+        },
+      });
+    }
 
     res.status(201).json(doc);
   } catch (error: any) {

@@ -10,6 +10,8 @@ import { Modal } from './components/common/Modal';
 // QR Print & 360 Profile Overlays
 import { PrintableQRLabel } from './components/qr/PrintableQRLabel';
 import { AssetPersonalCardModal } from './components/modules/AssetPersonalCardModal';
+import { OtpremnicaModal } from './components/modules/OtpremnicaModal';
+import { AlertCircle, X } from 'lucide-react';
 
 // 15 System Modules
 import { DashboardModule } from './components/modules/DashboardModule';
@@ -33,12 +35,21 @@ export function App() {
   const { 
     activeModule, selectedAssetFor360, setSelectedAssetFor360, 
     selectedAssetForQRLabel, setSelectedAssetForQRLabel,
+    selectedOtpremnicaForModal, setSelectedOtpremnicaForModal,
+    notificationToast, setNotificationToast,
     fetchInitialData
   } = useWarehouseStore();
 
   React.useEffect(() => {
     fetchInitialData();
   }, [fetchInitialData]);
+
+  React.useEffect(() => {
+    if (notificationToast) {
+      const timer = setTimeout(() => setNotificationToast(null), 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [notificationToast, setNotificationToast]);
 
   const renderActiveModule = () => {
     switch (activeModule) {
@@ -126,6 +137,29 @@ export function App() {
             onClose={() => setSelectedAssetForQRLabel(null)}
           />
         </Modal>
+      )}
+
+      {/* Global Otpremnica Handover Document Modal */}
+      {selectedOtpremnicaForModal && (
+        <OtpremnicaModal
+          isOpen={!!selectedOtpremnicaForModal}
+          onClose={() => setSelectedOtpremnicaForModal(null)}
+          otpremnica={selectedOtpremnicaForModal}
+        />
+      )}
+
+      {/* Global Notification Feedback Toast */}
+      {notificationToast && (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 px-4 py-3 bg-slate-900 text-white text-xs rounded-xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-2 max-w-sm">
+          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+          <span className="leading-snug">{notificationToast}</span>
+          <button
+            onClick={() => setNotificationToast(null)}
+            className="text-slate-400 hover:text-white ml-auto"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       )}
 
     </div>

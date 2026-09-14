@@ -198,11 +198,13 @@ export interface InventoryCheckItem {
 export interface AppNotification {
   id: string;
   userId: string;
-  type: 'CALIBRATION' | 'SERVICE' | 'OVERDUE' | 'AUDIT';
+  type: 'CALIBRATION' | 'SERVICE' | 'OVERDUE' | 'AUDIT' | 'TOOLBOX' | 'OTPREMNICA' | string;
   title: string;
   message: string;
   isRead: boolean;
   linkUrl?: string;
+  entityType?: 'ASSET' | 'SERVICE_ORDER' | 'MAINTENANCE_TASK' | 'CALIBRATION' | 'OTPREMNICA' | 'TOOLBOX' | string | null;
+  entityId?: string | null;
   createdAt: string;
 }
 

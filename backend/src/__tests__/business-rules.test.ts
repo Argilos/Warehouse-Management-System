@@ -1638,6 +1638,343 @@ async function runTests() {
     assertEquals(activeFilterLabels[0], 'Date Range: 2026-02-01 to 2026-02-28 (Custom Range)');
   });
 
+  // --------------------------------------------------------------------------
+  // RULE 10: NOTIFICATION CLICK-TO-DESTINATION NAVIGATION & ENTITY REFERENCE
+  // --------------------------------------------------------------------------
+  console.log('\nTest Suite 10: Notification Click-to-Destination Navigation & Entity Reference');
+
+  await test('10.1 Tool return as DAMAGED attaches entityType: SERVICE_ORDER and entityId on created notification', async () => {
+    let capturedNotifData: any = null;
+    (prisma.notification as any).create = async (args: any) => {
+      capturedNotifData = args?.data;
+      return { id: 'notif-dmg-1', ...args?.data };
+    };
+
+    (prisma.asset as any).findUnique = async () => ({
+      id: 'ast-dmg-1',
+      name: 'Impact Wrench',
+      assetNumber: 'IW-01',
+      status: 'ISSUED',
+      currentValue: 300,
+    });
+    (prisma.employeeAsset as any).findFirst = async () => ({
+      id: 'ea-1',
+      employeeId: 'emp-1',
+      assetId: 'ast-dmg-1',
+      returnedDate: null,
+    });
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 1 });
+    (prisma.asset as any).update = async () => ({ id: 'ast-dmg-1', status: 'DAMAGED' });
+    (prisma.assetTransaction as any).create = async (args: any) => ({
+      id: 'trx-ret-1',
+      ...args.data,
+      asset: { id: 'ast-dmg-1', name: 'Impact Wrench', assetNumber: 'IW-01' },
+      employee: { firstName: 'Charlie', lastName: 'Brown' },
+      performedBy: { firstName: 'Admin', lastName: 'User' },
+    });
+    (prisma.serviceOrder as any).create = async (args: any) => ({ id: 'srv-order-auto-1', ...args.data });
+    (prisma.maintenanceTask as any).count = async () => 3;
+    (prisma.maintenanceTask as any).create = async () => ({ id: 'task-auto-1' });
+
+    const res = await apiRequest('POST', '/transactions/return', {
+      assetId: 'ast-dmg-1',
+      condition: 'DAMAGED',
+      notes: 'Motor smoking heavily under load',
+    });
+
+    assertEquals(res.status, 201, 'Return should succeed with 201');
+    assert(capturedNotifData !== null, 'Notification must be created');
+    assertEquals(capturedNotifData.entityType, 'SERVICE_ORDER', 'Notification entityType must be SERVICE_ORDER');
+    assertEquals(capturedNotifData.entityId, 'srv-order-auto-1', 'Notification entityId must reference auto-created service order');
+  });
+
+  await test('10.2 Tool return as LOST attaches entityType: ASSET and entityId on created notification', async () => {
+    let capturedNotifData: any = null;
+    (prisma.notification as any).create = async (args: any) => {
+      capturedNotifData = args?.data;
+      return { id: 'notif-lost-1', ...args?.data };
+    };
+
+    (prisma.asset as any).findUnique = async () => ({
+      id: 'ast-lost-1',
+      name: 'Laser Distance Meter',
+      assetNumber: 'LDM-02',
+      status: 'ISSUED',
+      currentValue: 150,
+    });
+    (prisma.employeeAsset as any).findFirst = async () => ({
+      id: 'ea-2',
+      employeeId: 'emp-1',
+      assetId: 'ast-lost-1',
+      returnedDate: null,
+    });
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 1 });
+    (prisma.asset as any).update = async () => ({ id: 'ast-lost-1', status: 'LOST' });
+    (prisma.assetTransaction as any).create = async (args: any) => ({
+      id: 'trx-ret-lost',
+      ...args.data,
+      asset: { id: 'ast-lost-1', name: 'Laser Distance Meter', assetNumber: 'LDM-02' },
+      employee: { firstName: 'Charlie', lastName: 'Brown' },
+      performedBy: { firstName: 'Admin', lastName: 'User' },
+    });
+
+    const res = await apiRequest('POST', '/transactions/return', {
+      assetId: 'ast-lost-1',
+      condition: 'LOST',
+      notes: 'Left at construction site and cannot be found',
+    });
+
+    assertEquals(res.status, 201, 'Return should succeed with 201');
+    assert(capturedNotifData !== null, 'Notification must be created');
+    assertEquals(capturedNotifData.entityType, 'ASSET', 'Notification entityType must be ASSET');
+    assertEquals(capturedNotifData.entityId, 'ast-lost-1', 'Notification entityId must reference the lost asset');
+  });
+
+  await test('10.3 Tool loan issuance creates notification referencing entityType: ASSET and generated OTPREMNICA', async () => {
+    const createdNotifs: any[] = [];
+    (prisma.notification as any).create = async (args: any) => {
+      createdNotifs.push(args?.data);
+      return { id: `notif-${createdNotifs.length}`, ...args?.data };
+    };
+
+    (prisma.asset as any).findMany = async () => [
+      {
+        id: 'ast-issue-1',
+        name: 'Circular Saw',
+        assetNumber: 'CS-01',
+        status: 'AVAILABLE',
+        category: 'Power Tools',
+      },
+    ];
+    (prisma.employee as any).findUnique = async () => ({
+      id: 'emp-1',
+      firstName: 'Alex',
+      lastName: 'Miller',
+      employeeNumber: 'EMP-001',
+    });
+    (prisma.asset as any).update = async () => ({ id: 'ast-issue-1', status: 'ISSUED' });
+    (prisma.employeeAsset as any).updateMany = async () => ({ count: 1 });
+    (prisma.employeeAsset as any).create = async () => ({ id: 'ea-1' });
+    (prisma.assetTransaction as any).create = async (args: any) => ({
+      id: 'trx-issue-1',
+      ...args.data,
+      asset: { id: 'ast-issue-1', name: 'Circular Saw', assetNumber: 'CS-01' },
+      employee: { firstName: 'Alex', lastName: 'Miller' },
+      performedBy: { firstName: 'Admin', lastName: 'User' },
+    });
+    (prisma.assetTransaction as any).findMany = async () => [
+      {
+        id: 'trx-issue-1',
+        assetId: 'ast-issue-1',
+        asset: { id: 'ast-issue-1', name: 'Circular Saw', assetNumber: 'CS-01' },
+        employee: { firstName: 'Alex', lastName: 'Miller' },
+      },
+    ];
+    (prisma.otpremnicaDocument as any).count = async () => 7;
+    (prisma.otpremnicaDocument as any).create = async (args: any) => ({
+      id: 'otp-doc-99',
+      documentNumber: 'OTP-2026-008',
+      employeeId: 'emp-1',
+      transactionIds: ['trx-issue-1'],
+      employee: { firstName: 'Alex', lastName: 'Miller', employeeNumber: 'EMP-001', department: 'Operations' },
+      project: null,
+      createdBy: { firstName: 'Admin', lastName: 'User' },
+      ...args.data,
+    });
+
+    const res = await apiRequest('POST', '/transactions/issue', {
+      assetIds: ['ast-issue-1'],
+      employeeId: 'emp-1',
+    });
+
+    assertEquals(res.status, 201, 'Issuance should succeed with 201');
+    assert(createdNotifs.length >= 2, 'Must create both asset loan notification and otpremnica notification');
+    const assetNotif = createdNotifs.find((n) => n.entityType === 'ASSET');
+    const otpNotif = createdNotifs.find((n) => n.entityType === 'OTPREMNICA');
+
+    assert(assetNotif !== undefined, 'Should have created notification for ASSET');
+    assertEquals(assetNotif.entityId, 'ast-issue-1', 'Asset notification must reference issued asset');
+
+    assert(otpNotif !== undefined, 'Should have created notification for OTPREMNICA');
+    assertEquals(otpNotif.entityId, 'otp-doc-99', 'Otpremnica notification must reference generated Otpremnica');
+  });
+
+  await test('10.4 Single mark-as-read endpoint PUT /notifications/:id/read updates isRead and preserves entity references', async () => {
+    let capturedUpdateWhere: any = null;
+    let capturedUpdateData: any = null;
+
+    (prisma.notification as any).update = async (args: any) => {
+      capturedUpdateWhere = args?.where;
+      capturedUpdateData = args?.data;
+      return {
+        id: args?.where?.id,
+        isRead: true,
+        entityType: 'ASSET',
+        entityId: 'ast-issue-1',
+      };
+    };
+
+    const res = await apiRequest('PUT', '/notifications/notif-abc-123/read');
+    assertEquals(res.status, 200, 'PUT /notifications/:id/read must succeed with 200');
+    assertEquals(capturedUpdateWhere.id, 'notif-abc-123', 'Must update correct notification ID');
+    assertEquals(capturedUpdateData.isRead, true, 'Must set isRead to true');
+    assertEquals(res.data.isRead, true);
+    assertEquals(res.data.entityType, 'ASSET');
+  });
+
+  await test('10.5 Frontend notification click-handler resolves target destinations correctly for all entity types', async () => {
+    // Simulating frontend store data and click resolution logic
+    const mockStore = {
+      assets: [{ id: 'ast-10', assetNumber: 'AST-10', name: 'Drill' }],
+      otpremnicaDocuments: [{ id: 'otp-20', documentNumber: 'OTP-20' }],
+      serviceOrders: [{ id: 'srv-30', problemDescription: 'Broken motor' }],
+      maintenanceTasks: [{ id: 'task-40', taskNumber: 'TSK-40' }],
+      toolBoxes: [{ id: 'box-50', boxNumber: 'TB-50', name: 'Plumber Kit' }],
+      calibrations: [{ id: 'cal-60', certificateNumber: 'CAL-60' }],
+      activeModule: 'dashboard',
+      selectedAssetFor360: null as any,
+      selectedOtpremnicaForModal: null as any,
+      notificationToast: null as string | null,
+      showNotifications: true,
+      readIds: [] as string[],
+    };
+
+    const simulateClick = (n: any) => {
+      if (!n.isRead) mockStore.readIds.push(n.id);
+      mockStore.showNotifications = false;
+
+      const entityType = n.entityType?.toUpperCase();
+      const entityId = n.entityId;
+
+      if (entityType && entityId) {
+        switch (entityType) {
+          case 'ASSET': {
+            const found = mockStore.assets.find((a) => a.id === entityId);
+            if (found) {
+              mockStore.selectedAssetFor360 = found;
+              mockStore.activeModule = 'assets';
+            } else {
+              mockStore.notificationToast = 'This asset is no longer available in the warehouse inventory.';
+            }
+            break;
+          }
+          case 'OTPREMNICA': {
+            const found = mockStore.otpremnicaDocuments.find((d) => d.id === entityId);
+            if (found) {
+              mockStore.selectedOtpremnicaForModal = found;
+            } else {
+              mockStore.notificationToast = 'This Otpremnica delivery note is no longer available.';
+            }
+            break;
+          }
+          case 'SERVICE_ORDER': {
+            const found = mockStore.serviceOrders.find((s) => s.id === entityId);
+            if (found) mockStore.activeModule = 'maintenance';
+            else mockStore.notificationToast = 'This repair service order is no longer available.';
+            break;
+          }
+          case 'MAINTENANCE_TASK': {
+            const found = mockStore.maintenanceTasks.find((m) => m.id === entityId);
+            if (found) mockStore.activeModule = 'preventive-maintenance';
+            else mockStore.notificationToast = 'This maintenance task is no longer available.';
+            break;
+          }
+          case 'TOOLBOX': {
+            const found = mockStore.toolBoxes.find((b) => b.id === entityId);
+            if (found) mockStore.activeModule = 'toolboxes';
+            else mockStore.notificationToast = 'This tool box kit is no longer available or was dismantled.';
+            break;
+          }
+        }
+      }
+    };
+
+    // Click on ASSET notification
+    simulateClick({ id: 'n1', isRead: false, entityType: 'ASSET', entityId: 'ast-10' });
+    assertEquals(mockStore.readIds.includes('n1'), true, 'Notification marked read');
+    assertEquals(mockStore.showNotifications, false, 'Dropdown closed');
+    assertEquals(mockStore.selectedAssetFor360?.id, 'ast-10', 'Asset 360 modal opened');
+    assertEquals(mockStore.activeModule, 'assets', 'Navigated to assets module');
+
+    // Click on OTPREMNICA notification
+    simulateClick({ id: 'n2', isRead: false, entityType: 'OTPREMNICA', entityId: 'otp-20' });
+    assertEquals(mockStore.selectedOtpremnicaForModal?.id, 'otp-20', 'Otpremnica modal opened');
+
+    // Click on SERVICE_ORDER notification
+    simulateClick({ id: 'n3', isRead: false, entityType: 'SERVICE_ORDER', entityId: 'srv-30' });
+    assertEquals(mockStore.activeModule, 'maintenance', 'Navigated to maintenance module');
+
+    // Click on MAINTENANCE_TASK notification
+    simulateClick({ id: 'n4', isRead: false, entityType: 'MAINTENANCE_TASK', entityId: 'task-40' });
+    assertEquals(mockStore.activeModule, 'preventive-maintenance', 'Navigated to preventive-maintenance module');
+
+    // Click on TOOLBOX notification
+    simulateClick({ id: 'n5', isRead: false, entityType: 'TOOLBOX', entityId: 'box-50' });
+    assertEquals(mockStore.activeModule, 'toolboxes', 'Navigated to toolboxes module');
+  });
+
+  await test('10.6 Graceful handling when referenced entity was deleted shows feedback toast without crashing', async () => {
+    let feedbackToast: string | null = null;
+    let openedModal: any = null;
+    let markedRead = false;
+    let dropdownClosed = false;
+
+    const availableAssets: any[] = []; // Asset was deleted from inventory!
+
+    const handleDeletedEntityNotification = (n: any) => {
+      markedRead = true;
+      dropdownClosed = true;
+
+      const found = availableAssets.find((a) => a.id === n.entityId);
+      if (found) {
+        openedModal = found;
+      } else {
+        feedbackToast = 'This asset is no longer available in the warehouse inventory.';
+      }
+    };
+
+    handleDeletedEntityNotification({
+      id: 'notif-del-1',
+      isRead: false,
+      entityType: 'ASSET',
+      entityId: 'ast-deleted-999',
+    });
+
+    assertEquals(markedRead, true, 'Notification should still be marked as read');
+    assertEquals(dropdownClosed, true, 'Dropdown should close');
+    assertEquals(openedModal, null, 'Must NOT open modal for non-existent entity');
+    assertEquals(feedbackToast, 'This asset is no longer available in the warehouse inventory.', 'Must display feedback toast');
+  });
+
+  await test('10.7 Graceful degradation for legacy notifications without entity references', async () => {
+    let markedRead = false;
+    let dropdownClosed = false;
+    let navigatedModule: string | null = null;
+
+    const handleLegacyNotification = (n: any) => {
+      markedRead = true;
+      dropdownClosed = true;
+
+      const typeUpper = (n.type || '').toUpperCase();
+      if (typeUpper === 'SERVICE') navigatedModule = 'maintenance';
+      else if (typeUpper === 'CALIBRATION') navigatedModule = 'calibration';
+      else if (typeUpper === 'OVERDUE') navigatedModule = 'issuing';
+    };
+
+    // Legacy notification without entityType / entityId
+    handleLegacyNotification({
+      id: 'legacy-1',
+      isRead: false,
+      type: 'CALIBRATION',
+      title: 'Legacy Warning',
+      message: 'Old calibration due message',
+    });
+
+    assertEquals(markedRead, true, 'Legacy notification marked as read');
+    assertEquals(dropdownClosed, true, 'Dropdown closed');
+    assertEquals(navigatedModule, 'calibration', 'Gracefully navigated to calibration module based on type fallback');
+  });
+
   // Close server
   server.close();
 

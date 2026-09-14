@@ -26,6 +26,8 @@ interface WarehouseStore {
   globalSearch: string;
   selectedAssetFor360: Asset | null;
   selectedAssetForQRLabel: Asset | null;
+  selectedOtpremnicaForModal: OtpremnicaDocument | null;
+  notificationToast: string | null;
 
   // Entities state
   users: User[];
@@ -51,6 +53,8 @@ interface WarehouseStore {
   setActiveRole: (role: UserRole) => void;
   setSelectedAssetFor360: (asset: Asset | null) => void;
   setSelectedAssetForQRLabel: (asset: Asset | null) => void;
+  setSelectedOtpremnicaForModal: (doc: OtpremnicaDocument | null) => void;
+  setNotificationToast: (msg: string | null) => void;
 
   // Asset Actions
   addAsset: (asset: Omit<Asset, 'id' | 'createdAt' | 'updatedAt' | 'currentValue'>) => Promise<void>;
@@ -114,6 +118,8 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
   globalSearch: '',
   selectedAssetFor360: null,
   selectedAssetForQRLabel: null,
+  selectedOtpremnicaForModal: null,
+  notificationToast: null,
 
   users: [],
   employees: [],
@@ -170,6 +176,8 @@ export const useWarehouseStore = create<WarehouseStore>((set, get) => ({
 
   setSelectedAssetFor360: (asset) => set({ selectedAssetFor360: asset }),
   setSelectedAssetForQRLabel: (asset) => set({ selectedAssetForQRLabel: asset }),
+  setSelectedOtpremnicaForModal: (doc) => set({ selectedOtpremnicaForModal: doc }),
+  setNotificationToast: (msg) => set({ notificationToast: msg }),
 
   addAuditLog: async (entity, entityId, action, newValues, oldValues) => {
     const user = get().currentUser;
