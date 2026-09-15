@@ -5,6 +5,7 @@
   "scripts": {
     "postinstall": "npx -y prisma@5.22.0 generate --schema ./prisma/schema.prisma",
     "build": "npx -y prisma@5.22.0 generate --schema ./prisma/schema.prisma && cd frontend && npm install && npm run build",
+    "db:deploy": "npx -y prisma@5.22.0 migrate deploy --schema ./prisma/schema.prisma",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev"
   },

@@ -295,164 +295,200 @@ router.get('/initial-data', async (req: Request, res: Response) => {
           employee: true,
           items: { include: { asset: true } },
         },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch toolBoxes in /initial-data:', err);
+        return [] as any[];
       }),
       prisma.serviceOrder.findMany({
         include: { asset: true, supplier: true },
         orderBy: { createdAt: 'desc' },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch serviceOrders in /initial-data:', err);
+        return [] as any[];
       }),
       prisma.calibrationRecord.findMany({
         include: { asset: true, provider: true },
         orderBy: { createdAt: 'desc' },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch calibrations in /initial-data:', err);
+        return [] as any[];
       }),
       prisma.assetTransaction.findMany({
         include: { asset: true, employee: true, performedBy: true, project: true },
         orderBy: { transactionDate: 'desc' },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch transactions in /initial-data:', err);
+        return [] as any[];
       }),
       prisma.inventoryCheck.findMany({
         include: { performedBy: true, items: { include: { asset: true } } },
         orderBy: { createdAt: 'desc' },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch inventoryChecks in /initial-data:', err);
+        return [] as any[];
       }),
-      prisma.notification.findMany({ orderBy: { createdAt: 'desc' } }),
+      prisma.notification.findMany({ orderBy: { createdAt: 'desc' } }).catch((err) => {
+        console.error('Non-critical: failed to fetch notifications in /initial-data:', err);
+        return [] as any[];
+      }),
       prisma.auditLog.findMany({
         include: { user: true },
         orderBy: { createdAt: 'desc' },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch auditLogs in /initial-data:', err);
+        return [] as any[];
       }),
       prisma.maintenancePlan.findMany({
         include: { asset: true, responsible: true, tasks: { orderBy: { createdAt: 'desc' } } },
         orderBy: { nextDueDate: 'asc' },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch maintenancePlans in /initial-data:', err);
+        return [] as any[];
       }),
       prisma.maintenanceTask.findMany({
         include: { asset: true, plan: true, assignedTo: true },
         orderBy: { dueDate: 'asc' },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch maintenanceTasks in /initial-data:', err);
+        return [] as any[];
       }),
       prisma.otpremnicaDocument.findMany({
         include: { employee: true, project: true, createdBy: true },
         orderBy: { createdAt: 'desc' },
+      }).catch((err) => {
+        console.error('Non-critical: failed to fetch otpremnicaDocuments in /initial-data:', err);
+        return [] as any[];
       }),
     ]);
 
-    let notifications = notificationsRaw;
-    if (notifications.length === 0) {
-      let firstUser = users.length > 0 ? users[0] : null;
-      if (!firstUser) {
-        firstUser = await prisma.user.create({
-          data: { email: 'admin@warehouse.com', firstName: 'System', lastName: 'Admin', role: 'ADMIN' }
-        });
-      }
-
-      await prisma.notification.createMany({
-        data: [
-          {
-            userId: firstUser.id,
-            type: 'SERVICE',
-            title: 'Equipment Damage Dispatched to Repair',
-            message: 'DeWalt Rotary Hammer Drill (AST-POW-001) reported damaged with slipping chuck mechanism and dispatched to Bosch Repair Services.',
-            isRead: false,
-            entityType: 'SERVICE_ORDER',
-            entityId: null,
-          },
-          {
-            userId: firstUser.id,
-            type: 'CALIBRATION',
-            title: 'Calibration Expiration Warning (Due in 14 Days)',
-            message: 'Fluke 87V Digital Multimeter (AST-MEAS-004) precision calibration expires on 2026-09-01. Please schedule vendor testing.',
-            isRead: false,
-            entityType: 'CALIBRATION',
-            entityId: null,
-          },
-          {
-            userId: firstUser.id,
-            type: 'OVERDUE',
-            title: 'Overdue Equipment Loan Alert',
-            message: 'Bosch Angle Grinder 4.5 inch (AST-POW-012) issued to John Doe is past its expected return date (2026-08-10).',
-            isRead: false,
-            entityType: 'ASSET',
-            entityId: null,
-          },
-        ]
-      });
-
-      notifications = await prisma.notification.findMany({ orderBy: { createdAt: 'desc' } });
-    }
-
-    // Automated 30-day calibration expiration & overdue loan scanners
     const now = new Date();
     const targetUser = users.length > 0 ? users[0] : null;
+    let notifications: any[] = [...(notificationsRaw || [])];
 
-    if (targetUser) {
-      const dueAssetMap = new Map<string, { assetName: string; certNum: string; nextCalibrationDate: Date }>();
-
-      for (const cal of calibrationsRaw as any[]) {
-        if (cal.assetId && cal.nextCalibrationDate && cal.asset && !dueAssetMap.has(cal.assetId)) {
-          dueAssetMap.set(cal.assetId, {
-            assetName: cal.asset.name,
-            certNum: cal.certificateNumber || cal.asset.assetNumber,
-            nextCalibrationDate: new Date(cal.nextCalibrationDate),
+    try {
+      if (notifications.length === 0) {
+        let firstUser = targetUser;
+        if (!firstUser) {
+          firstUser = await prisma.user.create({
+            data: { email: 'admin@warehouse.com', firstName: 'System', lastName: 'Admin', role: 'ADMIN' }
           });
         }
+
+        await prisma.notification.createMany({
+          data: [
+            {
+              userId: firstUser.id,
+              type: 'SERVICE',
+              title: 'Equipment Damage Dispatched to Repair',
+              message: 'DeWalt Rotary Hammer Drill (AST-POW-001) reported damaged with slipping chuck mechanism and dispatched to Bosch Repair Services.',
+              isRead: false,
+              entityType: 'SERVICE_ORDER',
+              entityId: null,
+            },
+            {
+              userId: firstUser.id,
+              type: 'CALIBRATION',
+              title: 'Calibration Expiration Warning (Due in 14 Days)',
+              message: 'Fluke 87V Digital Multimeter (AST-MEAS-004) precision calibration expires on 2026-09-01. Please schedule vendor testing.',
+              isRead: false,
+              entityType: 'CALIBRATION',
+              entityId: null,
+            },
+            {
+              userId: firstUser.id,
+              type: 'OVERDUE',
+              title: 'Overdue Equipment Loan Alert',
+              message: 'Bosch Angle Grinder 4.5 inch (AST-POW-012) issued to John Doe is past its expected return date (2026-08-10).',
+              isRead: false,
+              entityType: 'ASSET',
+              entityId: null,
+            },
+          ]
+        });
+
+        notifications = await prisma.notification.findMany({ orderBy: { createdAt: 'desc' } });
       }
 
-      for (const asset of assetsRaw as any[]) {
-        if (asset.nextCalibrationDate && !dueAssetMap.has(asset.id)) {
-          dueAssetMap.set(asset.id, {
-            assetName: asset.name,
-            certNum: `CERT-${asset.assetNumber}`,
-            nextCalibrationDate: new Date(asset.nextCalibrationDate),
-          });
-        }
-      }
+      // Automated 30-day calibration expiration & overdue loan scanners
+      if (targetUser) {
+        const dueAssetMap = new Map<string, { assetName: string; certNum: string; nextCalibrationDate: Date }>();
 
-      for (const [assetId, item] of Array.from(dueAssetMap.entries())) {
-        const diffDays = (item.nextCalibrationDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
-        if (diffDays >= 0 && diffDays <= 30) {
-          const exists = notifications.some(
-            (n: any) =>
-              n.type === 'CALIBRATION' &&
-              n.title.includes('Expiration Warning') &&
-              (n.message.includes(item.assetName) || n.message.includes(item.certNum))
-          );
-          if (!exists) {
-            const daysLeft = Math.ceil(diffDays);
-            const createdNotif = await prisma.notification.create({
-              data: {
-                userId: targetUser.id,
-                type: 'CALIBRATION',
-                title: `Calibration Expiration Warning (${item.assetName})`,
-                message: `Precision calibration for ${item.assetName} (${item.certNum}) expires on ${item.nextCalibrationDate.toISOString().slice(0, 10)} (due in ${daysLeft} days).`,
-                isRead: false,
-                entityType: 'ASSET',
-                entityId: assetId,
-              },
+        for (const cal of (calibrationsRaw || []) as any[]) {
+          if (cal.assetId && cal.nextCalibrationDate && cal.asset && !dueAssetMap.has(cal.assetId)) {
+            dueAssetMap.set(cal.assetId, {
+              assetName: cal.asset.name,
+              certNum: cal.certificateNumber || cal.asset.assetNumber,
+              nextCalibrationDate: new Date(cal.nextCalibrationDate),
             });
-            notifications.unshift(createdNotif);
           }
         }
-      }
 
-      for (const trx of transactionsRaw as any[]) {
-        if (trx.transactionType === 'ISSUE' && trx.returnDate && trx.asset?.status === 'ISSUED') {
-          const retDate = new Date(trx.returnDate);
-          if (retDate < now) {
-            const assetNum = trx.asset.assetNumber;
-            const exists = notifications.some((n: any) => n.message.includes(assetNum));
+        for (const asset of (assetsRaw || []) as any[]) {
+          if (asset.nextCalibrationDate && !dueAssetMap.has(asset.id)) {
+            dueAssetMap.set(asset.id, {
+              assetName: asset.name,
+              certNum: `CERT-${asset.assetNumber}`,
+              nextCalibrationDate: new Date(asset.nextCalibrationDate),
+            });
+          }
+        }
+
+        for (const [assetId, item] of Array.from(dueAssetMap.entries())) {
+          const diffDays = (item.nextCalibrationDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+          if (diffDays >= 0 && diffDays <= 30) {
+            const exists = notifications.some(
+              (n: any) =>
+                n.type === 'CALIBRATION' &&
+                n.title.includes('Expiration Warning') &&
+                (n.message.includes(item.assetName) || n.message.includes(item.certNum))
+            );
             if (!exists) {
-              const empName = trx.employee ? `${trx.employee.firstName} ${trx.employee.lastName}` : 'Field Worker';
+              const daysLeft = Math.ceil(diffDays);
               const createdNotif = await prisma.notification.create({
                 data: {
                   userId: targetUser.id,
-                  type: 'OVERDUE',
-                  title: `Overdue Loan Alert (${trx.asset.name})`,
-                  message: `Equipment ${trx.asset.name} (${assetNum}) issued to ${empName} was expected back on ${retDate.toISOString().slice(0, 10)} and is past due.`,
+                  type: 'CALIBRATION',
+                  title: `Calibration Expiration Warning (${item.assetName})`,
+                  message: `Precision calibration for ${item.assetName} (${item.certNum}) expires on ${item.nextCalibrationDate.toISOString().slice(0, 10)} (due in ${daysLeft} days).`,
                   isRead: false,
                   entityType: 'ASSET',
-                  entityId: trx.assetId,
+                  entityId: assetId,
                 },
               });
               notifications.unshift(createdNotif);
             }
           }
         }
+
+        for (const trx of (transactionsRaw || []) as any[]) {
+          if (trx.transactionType === 'ISSUE' && trx.returnDate && trx.asset?.status === 'ISSUED') {
+            const retDate = new Date(trx.returnDate);
+            if (retDate < now) {
+              const assetNum = trx.asset?.assetNumber;
+              if (assetNum) {
+                const exists = notifications.some((n: any) => n.message?.includes(assetNum));
+                if (!exists) {
+                  const empName = trx.employee ? `${trx.employee.firstName} ${trx.employee.lastName}` : 'Field Worker';
+                  const createdNotif = await prisma.notification.create({
+                    data: {
+                      userId: targetUser.id,
+                      type: 'OVERDUE',
+                      title: `Overdue Loan Alert (${trx.asset?.name || 'Asset'})`,
+                      message: `Equipment ${trx.asset?.name || 'Asset'} (${assetNum}) issued to ${empName} was expected back on ${retDate.toISOString().slice(0, 10)} and is past due.`,
+                      isRead: false,
+                      entityType: 'ASSET',
+                      entityId: trx.assetId,
+                    },
+                  });
+                  notifications.unshift(createdNotif);
+                }
+              }
+            }
+          }
+        }
       }
+    } catch (notifScannerErr) {
+      console.error('Non-critical: notification background sync failed in /initial-data:', notifScannerErr);
     }
 
     // Format assets for frontend interface expectations
@@ -634,73 +670,77 @@ router.get('/initial-data', async (req: Request, res: Response) => {
     }));
 
     // ─── AUTOMATED PREVENTIVE MAINTENANCE SCANNER & DEDUPLICATION ─────────────
-    let tasksList = [...maintenanceTasksRaw];
+    let tasksList = [...(maintenanceTasksRaw || [])];
 
-    for (const plan of maintenancePlansRaw as any[]) {
-      if (plan.status === 'ACTIVE' && plan.nextDueDate) {
-        const nextDate = new Date(plan.nextDueDate);
-        const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+    try {
+      for (const plan of (maintenancePlansRaw || []) as any[]) {
+        if (plan.status === 'ACTIVE' && plan.nextDueDate) {
+          const nextDate = new Date(plan.nextDueDate);
+          const diffDays = (nextDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
 
-        // Deduplication Check: Check if an active (PENDING or IN_PROGRESS) task already exists for this plan
-        const hasActiveTask = tasksList.some(
-          (t: any) => t.planId === plan.id && (t.status === 'PENDING' || t.status === 'IN_PROGRESS')
-        );
+          // Deduplication Check: Check if an active (PENDING or IN_PROGRESS) task already exists for this plan
+          const hasActiveTask = tasksList.some(
+            (t: any) => t.planId === plan.id && (t.status === 'PENDING' || t.status === 'IN_PROGRESS')
+          );
 
-        if (!hasActiveTask && diffDays <= 30) {
-          const randNum = Math.floor(100 + Math.random() * 900);
-          const taskNumber = `PM-${now.getFullYear()}-${randNum}`;
-          const newTask = await prisma.maintenanceTask.create({
-            data: {
-              taskNumber,
-              planId: plan.id,
-              assetId: plan.assetId,
-              title: plan.name,
-              type: plan.type,
-              priority: plan.priority,
-              dueDate: plan.nextDueDate,
-              assignedToId: plan.responsibleId || null,
-              checklistProgress: plan.checklist || undefined,
-              status: 'PENDING',
-            },
-            include: { asset: true, plan: true, assignedTo: true },
-          });
-          tasksList.unshift(newTask);
+          if (!hasActiveTask && diffDays <= 30) {
+            const randNum = Math.floor(100 + Math.random() * 900);
+            const taskNumber = `PM-${now.getFullYear()}-${randNum}`;
+            const newTask = await prisma.maintenanceTask.create({
+              data: {
+                taskNumber,
+                planId: plan.id,
+                assetId: plan.assetId,
+                title: plan.name,
+                type: plan.type,
+                priority: plan.priority,
+                dueDate: plan.nextDueDate,
+                assignedToId: plan.responsibleId || null,
+                checklistProgress: plan.checklist || undefined,
+                status: 'PENDING',
+              },
+              include: { asset: true, plan: true, assignedTo: true },
+            });
+            tasksList.unshift(newTask);
+          }
         }
       }
-    }
 
-    if (targetUser) {
-      for (const task of tasksList as any[]) {
-        if (task.status === 'PENDING' || task.status === 'IN_PROGRESS') {
-          const dueDate = new Date(task.dueDate);
-          const diffDays = (dueDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
-          if (diffDays <= 30) {
-            const exists = notifications.some((n: any) => n.type === 'SERVICE' && n.message.includes(task.taskNumber));
-            if (!exists) {
-              let title = `Preventive Maintenance Alert: ${task.asset?.name || task.title}`;
-              let message = `Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is due on ${dueDate.toISOString().slice(0, 10)}.`;
-              if (diffDays < 0) {
-                const daysOverdue = Math.abs(Math.floor(diffDays));
-                message = `OVERDUE: Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is overdue by ${daysOverdue} days!`;
-              } else if (Math.floor(diffDays) === 0) {
-                message = `DUE TODAY: Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is due today.`;
+      if (targetUser) {
+        for (const task of tasksList as any[]) {
+          if (task.status === 'PENDING' || task.status === 'IN_PROGRESS') {
+            const dueDate = new Date(task.dueDate);
+            const diffDays = (dueDate.getTime() - now.getTime()) / (1000 * 3600 * 24);
+            if (diffDays <= 30) {
+              const exists = notifications.some((n: any) => n.type === 'SERVICE' && n.message?.includes(task.taskNumber));
+              if (!exists) {
+                let title = `Preventive Maintenance Alert: ${task.asset?.name || task.title}`;
+                let message = `Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is due on ${dueDate.toISOString().slice(0, 10)}.`;
+                if (diffDays < 0) {
+                  const daysOverdue = Math.abs(Math.floor(diffDays));
+                  message = `OVERDUE: Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is overdue by ${daysOverdue} days!`;
+                } else if (Math.floor(diffDays) === 0) {
+                  message = `DUE TODAY: Preventive maintenance (${task.title}) for ${task.asset?.name} [${task.taskNumber}] is due today.`;
+                }
+                const createdNotif = await prisma.notification.create({
+                  data: {
+                    userId: targetUser.id,
+                    type: 'SERVICE',
+                    title,
+                    message,
+                    isRead: false,
+                    entityType: 'MAINTENANCE_TASK',
+                    entityId: task.id,
+                  },
+                });
+                notifications.unshift(createdNotif);
               }
-              const createdNotif = await prisma.notification.create({
-                data: {
-                  userId: targetUser.id,
-                  type: 'SERVICE',
-                  title,
-                  message,
-                  isRead: false,
-                  entityType: 'MAINTENANCE_TASK',
-                  entityId: task.id,
-                },
-              });
-              notifications.unshift(createdNotif);
             }
           }
         }
       }
+    } catch (pmScannerErr) {
+      console.error('Non-critical: preventive maintenance scanner failed in /initial-data:', pmScannerErr);
     }
 
     const formattedUsers = users.map((u: any) => ({
