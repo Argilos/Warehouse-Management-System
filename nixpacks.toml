@@ -5,4 +5,4 @@ cmds = ["npm install", "cd backend && npm install"]
 cmds = ["npx -y prisma@5.22.0 generate --schema ./prisma/schema.prisma", "cd backend && npm run build"]
 
 [start]
-cmd = "npx -y prisma@5.22.0 migrate deploy --schema ./prisma/schema.prisma && node backend/dist/server.js"
+cmd = "node backend/scripts/deploy-migrate.js && node backend/dist/server.js"
