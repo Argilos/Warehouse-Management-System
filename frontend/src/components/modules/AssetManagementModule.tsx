@@ -6,8 +6,12 @@ import { Modal } from '../common/Modal';
 import { formatCurrency } from '../../utils/depreciation';
 import {
   Package, Plus, Search, Filter, QrCode, Eye, Edit3, Trash2,
-  Grid, List, DollarSign, Tag, CheckCircle, RefreshCw
+  Grid, List, DollarSign, Tag, CheckCircle, RefreshCw,
+  FileSpreadsheet, Download, Printer
 } from 'lucide-react';
+import { downloadAssetExcelTemplate } from '../../utils/assetExcelTemplate';
+import { AssetImportModal } from './AssetImportModal';
+import { BulkQRPrintModal } from '../qr/BulkQRPrintModal';
 
 const STATUS_STYLES: Record<string, string> = {
   AVAILABLE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -23,7 +27,7 @@ const STATUS_STYLES: Record<string, string> = {
 export const AssetManagementModule: React.FC = () => {
   const {
     assets, suppliers, globalSearch, addAsset, updateAsset, deleteAsset,
-    setSelectedAssetFor360, setSelectedAssetForQRLabel, activeRole
+    setSelectedAssetFor360, setSelectedAssetForQRLabel, activeRole, fetchInitialData
   } = useWarehouseStore();
   const { t } = useLanguageStore();
 
@@ -31,6 +35,8 @@ export const AssetManagementModule: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [bulkQRAssets, setBulkQRAssets] = useState<Asset[] | null>(null);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
 
   const [formData, setFormData] = useState({
@@ -132,12 +138,42 @@ export const AssetManagementModule: React.FC = () => {
             {t('Manage equipment, QR references, depreciation parameters, and warehouse locations.')}
           </p>
         </div>
-        {canEdit && (
-          <button onClick={handleOpenCreateModal} className="btn-primary">
-            <Plus className="w-4 h-4" />
-            {t('Register New Asset')}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={downloadAssetExcelTemplate}
+            className="btn-secondary flex items-center gap-1.5"
+            title="Download pre-formatted Excel template"
+          >
+            <Download className="w-4 h-4 text-brand-600" />
+            <span>{t('Template')}</span>
           </button>
-        )}
+          {canEdit && (
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="btn-secondary flex items-center gap-1.5"
+              title="Bulk import assets from Excel or CSV spreadsheet"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>{t('Import Excel')}</span>
+            </button>
+          )}
+          {filteredAssets.length > 0 && (
+            <button
+              onClick={() => setBulkQRAssets(filteredAssets)}
+              className="btn-secondary flex items-center gap-1.5"
+              title="Print QR labels for currently filtered assets"
+            >
+              <Printer className="w-4 h-4 text-slate-600" />
+              <span>{t('Print QRs')} ({filteredAssets.length})</span>
+            </button>
+          )}
+          {canEdit && (
+            <button onClick={handleOpenCreateModal} className="btn-primary">
+              <Plus className="w-4 h-4" />
+              {t('Register New Asset')}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -427,6 +463,28 @@ export const AssetManagementModule: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Bulk Excel Import Modal */}
+      {isImportModalOpen && (
+        <AssetImportModal
+          existingAssets={assets}
+          onClose={() => setIsImportModalOpen(false)}
+          onImportComplete={() => {
+            fetchInitialData();
+          }}
+          onOpenBulkQRPrint={(imported) => {
+            setBulkQRAssets(imported);
+          }}
+        />
+      )}
+
+      {/* Bulk QR Code Print Modal */}
+      {bulkQRAssets && (
+        <BulkQRPrintModal
+          assets={bulkQRAssets}
+          onClose={() => setBulkQRAssets(null)}
+        />
+      )}
     </div>
   );
 };

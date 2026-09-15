@@ -894,6 +894,193 @@ router.post('/assets', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/assets/bulk-import', async (req: Request, res: Response) => {
+  try {
+    const { assets, updateDuplicates = false } = req.body;
+
+    if (!Array.isArray(assets) || assets.length === 0) {
+      return res.status(400).json({ error: 'No assets provided for import' });
+    }
+
+    const ALLOWED_STATUSES = ['AVAILABLE', 'DAMAGED', 'IN_SERVICE', 'IN_CALIBRATION', 'RETIRED'];
+    const results: any[] = [];
+    const errors: Array<{ row: number; assetNumber?: string; error: string }> = [];
+    let importedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    for (let i = 0; i < assets.length; i++) {
+      const item = assets[i];
+      const rowNum = i + 1;
+
+      const name = item.name ? String(item.name).trim() : '';
+      const assetNumber = item.assetNumber ? String(item.assetNumber).trim() : '';
+      const serialNumber = item.serialNumber ? String(item.serialNumber).trim() : '';
+      const category = item.category ? String(item.category).trim() : '';
+      const manufacturer = item.manufacturer ? String(item.manufacturer).trim() : '';
+      const model = item.model ? String(item.model).trim() : '';
+      const location = item.location ? String(item.location).trim() : '';
+      const rawPrice = item.purchasePrice;
+      const rawDate = item.purchaseDate;
+
+      // Validate required fields
+      if (!name || !assetNumber || !serialNumber || !category || !manufacturer || !model || !location) {
+        errors.push({
+          row: rowNum,
+          assetNumber: assetNumber || undefined,
+          error: 'Missing required fields (name, assetNumber, serialNumber, category, manufacturer, model, location)',
+        });
+        skippedCount++;
+        continue;
+      }
+
+      const purchasePrice = Number(rawPrice);
+      if (isNaN(purchasePrice) || purchasePrice < 0) {
+        errors.push({
+          row: rowNum,
+          assetNumber,
+          error: 'Purchase price must be a valid non-negative number',
+        });
+        skippedCount++;
+        continue;
+      }
+
+      const purchaseDate = parseDate(rawDate);
+      if (isNaN(purchaseDate.getTime())) {
+        errors.push({
+          row: rowNum,
+          assetNumber,
+          error: 'Purchase date is invalid',
+        });
+        skippedCount++;
+        continue;
+      }
+
+      // Status check
+      let status = 'AVAILABLE';
+      if (item.status) {
+        const normStatus = String(item.status).trim().toUpperCase().replace(/[\s-]+/g, '_');
+        if (ALLOWED_STATUSES.includes(normStatus)) {
+          status = normStatus;
+        } else {
+          errors.push({
+            row: rowNum,
+            assetNumber,
+            error: `Invalid status "${item.status}". Permitted: ${ALLOWED_STATUSES.join(', ')}`,
+          });
+          skippedCount++;
+          continue;
+        }
+      }
+
+      const currentValue = Number(item.currentValue) >= 0 ? Number(item.currentValue) : purchasePrice;
+      const depreciationRate = Number(item.depreciationRate) >= 0 ? Number(item.depreciationRate) : 5;
+      const description = item.description ? String(item.description).trim() : null;
+      const barcode = item.barcode ? String(item.barcode).trim() : null;
+      const supplierId = item.supplierId ? String(item.supplierId).trim() : null;
+
+      // STRICT REQUIREMENT: User-provided QR code is NEVER accepted.
+      // QR code is ALWAYS system-generated: QR-${assetNumber}
+      const systemGeneratedQRCode = `QR-${assetNumber}`;
+
+      // Check if asset with this assetNumber or serialNumber already exists
+      const existingAsset = await prisma.asset.findFirst({
+        where: {
+          OR: [
+            { assetNumber },
+            { serialNumber },
+          ],
+        },
+      });
+
+      if (existingAsset) {
+        if (!updateDuplicates) {
+          errors.push({
+            row: rowNum,
+            assetNumber,
+            error: `Asset Number "${assetNumber}" or Serial Number "${serialNumber}" already exists in the system`,
+          });
+          skippedCount++;
+          continue;
+        }
+
+        // Terminal state enforcement: if existing asset is LOST, refuse updates
+        if (existingAsset.status === 'LOST') {
+          errors.push({
+            row: rowNum,
+            assetNumber,
+            error: `Asset "${existingAsset.name}" is marked as LOST (terminal state). No updates allowed.`,
+          });
+          skippedCount++;
+          continue;
+        }
+
+        // Update existing asset
+        const updated = await prisma.asset.update({
+          where: { id: existingAsset.id },
+          data: {
+            name,
+            category,
+            manufacturer,
+            model,
+            location,
+            purchaseDate,
+            purchasePrice,
+            currentValue,
+            depreciationRate,
+            description,
+            barcode,
+            supplierId,
+            status: status as any,
+          },
+        });
+
+        results.push(updated);
+        updatedCount++;
+      } else {
+        // Create new asset with system-generated QR code
+        const created = await prisma.asset.create({
+          data: {
+            assetNumber,
+            qrCode: systemGeneratedQRCode,
+            name,
+            serialNumber,
+            category,
+            manufacturer,
+            model,
+            location,
+            purchaseDate,
+            purchasePrice,
+            currentValue,
+            depreciationRate,
+            description,
+            barcode,
+            supplierId,
+            status: status as any,
+          },
+        });
+
+        results.push(created);
+        importedCount++;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      importedCount,
+      updatedCount,
+      skippedCount,
+      totalProcessed: assets.length,
+      importedAssets: results,
+      errors,
+    });
+  } catch (error: any) {
+    console.error('Error during bulk asset import:', error);
+    res.status(500).json({ error: error.message || 'Internal server error during bulk import' });
+  }
+});
+
+
 router.put('/assets/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

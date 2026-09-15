@@ -1975,6 +1975,261 @@ async function runTests() {
     assertEquals(navigatedModule, 'calibration', 'Gracefully navigated to calibration module based on type fallback');
   });
 
+  // --------------------------------------------------------------------------
+  // RULE 11: ASSET BULK IMPORT & SYSTEM-GENERATED QR CODES
+  // --------------------------------------------------------------------------
+  console.log('Test Suite 11: Excel Bulk Import & Automated QR Generation');
+
+  await test('11.1 Bulk import creates valid asset and auto-generates QR-${assetNumber}', async () => {
+    (prisma.asset as any).findFirst = async () => null;
+    let createdAssetData: any = null;
+    (prisma.asset as any).create = async (args: any) => {
+      createdAssetData = args.data;
+      return { id: 'asset-bulk-1', ...args.data };
+    };
+
+    const res = await apiRequest('POST', '/assets/bulk-import', {
+      assets: [
+        {
+          name: 'Makita Angle Grinder',
+          assetNumber: 'AST-BLK-001',
+          serialNumber: 'SN-MKT-100',
+          category: 'Power Tools',
+          manufacturer: 'Makita',
+          model: 'GA5030R',
+          location: 'Shelf B-2',
+          purchaseDate: '2025-02-10',
+          purchasePrice: 95.0,
+          status: 'AVAILABLE',
+        },
+      ],
+      updateDuplicates: false,
+    });
+
+    assertEquals(res.status, 200, 'Import status 200');
+    assertEquals(res.data.success, true, 'Import marked success');
+    assertEquals(res.data.importedCount, 1, '1 asset imported');
+    assertEquals(createdAssetData.assetNumber, 'AST-BLK-001', 'Correct assetNumber');
+    assertEquals(createdAssetData.qrCode, 'QR-AST-BLK-001', 'QR Code automatically generated with system format QR-${assetNumber}');
+  });
+
+  await test('11.2 Bulk import ignores user-provided QR code and enforces system-generated QR', async () => {
+    (prisma.asset as any).findFirst = async () => null;
+    let createdAssetData: any = null;
+    (prisma.asset as any).create = async (args: any) => {
+      createdAssetData = args.data;
+      return { id: 'asset-bulk-2', ...args.data };
+    };
+
+    const res = await apiRequest('POST', '/assets/bulk-import', {
+      assets: [
+        {
+          name: 'DeWalt Circular Saw',
+          assetNumber: 'AST-BLK-002',
+          serialNumber: 'SN-DWT-200',
+          category: 'Power Tools',
+          manufacturer: 'DeWalt',
+          model: 'DCS570N',
+          location: 'Rack D',
+          purchaseDate: '2025-01-20',
+          purchasePrice: 160.0,
+          qrCode: 'FORGED_USER_QR_CODE_12345', // Must be ignored!
+        },
+      ],
+      updateDuplicates: false,
+    });
+
+    assertEquals(res.status, 200, 'Import status 200');
+    assertEquals(createdAssetData.qrCode, 'QR-AST-BLK-002', 'User QR code ignored; system QR generated instead');
+  });
+
+  await test('11.3 Bulk import handles mixed valid and invalid rows gracefully', async () => {
+    (prisma.asset as any).findFirst = async () => null;
+    (prisma.asset as any).create = async (args: any) => ({ id: 'asset-bulk-3', ...args.data });
+
+    const res = await apiRequest('POST', '/assets/bulk-import', {
+      assets: [
+        {
+          name: 'Fluke 87V Multimeter',
+          assetNumber: 'AST-BLK-003',
+          serialNumber: 'SN-FLK-300',
+          category: 'Measuring Equipment',
+          manufacturer: 'Fluke',
+          model: '87V',
+          location: 'Lab A',
+          purchaseDate: '2024-05-01',
+          purchasePrice: 420.0,
+        },
+        {
+          name: 'Incomplete Tool',
+          assetNumber: '', // Missing required assetNumber
+          serialNumber: 'SN-INC-001',
+          category: 'Power Tools',
+          manufacturer: 'Unknown',
+          model: 'X',
+          location: 'Lab A',
+          purchaseDate: '2024-05-01',
+          purchasePrice: 50.0,
+        },
+      ],
+      updateDuplicates: false,
+    });
+
+    assertEquals(res.status, 200, 'Bulk import returns 200');
+    assertEquals(res.data.importedCount, 1, 'Valid item imported');
+    assertEquals(res.data.skippedCount, 1, 'Invalid item skipped');
+    assertEquals(res.data.errors.length, 1, 'Errors array records reason for invalid item');
+  });
+
+  await test('11.4 Duplicate asset with updateDuplicates: false is skipped with duplicate error', async () => {
+    (prisma.asset as any).findFirst = async () => ({
+      id: 'existing-ast-1',
+      assetNumber: 'AST-EXISTING-1',
+      serialNumber: 'SN-EX-1',
+      name: 'Existing Tool',
+      status: 'AVAILABLE',
+    });
+
+    const res = await apiRequest('POST', '/assets/bulk-import', {
+      assets: [
+        {
+          name: 'Duplicate Tool Attempt',
+          assetNumber: 'AST-EXISTING-1',
+          serialNumber: 'SN-EX-1',
+          category: 'Power Tools',
+          manufacturer: 'Bosch',
+          model: 'GSR',
+          location: 'Rack 1',
+          purchaseDate: '2024-01-01',
+          purchasePrice: 100,
+        },
+      ],
+      updateDuplicates: false,
+    });
+
+    assertEquals(res.status, 200, 'Returns 200');
+    assertEquals(res.data.importedCount, 0, '0 imported');
+    assertEquals(res.data.skippedCount, 1, '1 skipped');
+    assert(res.data.errors[0].error.includes('already exists'), 'Error message reports duplicate');
+  });
+
+  await test('11.5 Duplicate asset with updateDuplicates: true updates existing record', async () => {
+    (prisma.asset as any).findFirst = async () => ({
+      id: 'existing-ast-1',
+      assetNumber: 'AST-EXISTING-1',
+      serialNumber: 'SN-EX-1',
+      name: 'Existing Tool',
+      status: 'AVAILABLE',
+    });
+
+    let updatedData: any = null;
+    (prisma.asset as any).update = async (args: any) => {
+      updatedData = args.data;
+      return { id: 'existing-ast-1', ...args.data };
+    };
+
+    const res = await apiRequest('POST', '/assets/bulk-import', {
+      assets: [
+        {
+          name: 'Updated Tool Name',
+          assetNumber: 'AST-EXISTING-1',
+          serialNumber: 'SN-EX-1',
+          category: 'Power Tools',
+          manufacturer: 'Bosch',
+          model: 'GSR 18V Upgraded',
+          location: 'Rack 2',
+          purchaseDate: '2024-01-01',
+          purchasePrice: 120,
+          status: 'AVAILABLE',
+        },
+      ],
+      updateDuplicates: true,
+    });
+
+    assertEquals(res.status, 200, 'Returns 200');
+    assertEquals(res.data.importedCount, 0, '0 new imports');
+    assertEquals(res.data.updatedCount, 1, '1 updated asset');
+    assertEquals(updatedData.name, 'Updated Tool Name', 'Name successfully updated');
+    assertEquals(updatedData.model, 'GSR 18V Upgraded', 'Model successfully updated');
+  });
+
+  await test('11.6 Duplicate update strictly rejected if existing asset is in terminal LOST status', async () => {
+    (prisma.asset as any).findFirst = async () => ({
+      id: 'existing-lost-ast',
+      assetNumber: 'AST-LOST-999',
+      serialNumber: 'SN-LOST-999',
+      name: 'Lost Drill',
+      status: 'LOST',
+    });
+
+    const res = await apiRequest('POST', '/assets/bulk-import', {
+      assets: [
+        {
+          name: 'Attempt to overwrite lost tool',
+          assetNumber: 'AST-LOST-999',
+          serialNumber: 'SN-LOST-999',
+          category: 'Power Tools',
+          manufacturer: 'Bosch',
+          model: 'GSR',
+          location: 'Rack 1',
+          purchaseDate: '2024-01-01',
+          purchasePrice: 100,
+        },
+      ],
+      updateDuplicates: true,
+    });
+
+    assertEquals(res.status, 200, 'Returns 200');
+    assertEquals(res.data.updatedCount, 0, '0 updated');
+    assertEquals(res.data.skippedCount, 1, '1 skipped due to terminal LOST state');
+    assert(res.data.errors[0].error.includes('LOST'), 'Error message cites terminal LOST state');
+  });
+
+  await test('11.7 Valid historical statuses accepted; invalid status rejected', async () => {
+    (prisma.asset as any).findFirst = async () => null;
+    (prisma.asset as any).create = async (args: any) => ({ id: 'asset-bulk-7', ...args.data });
+
+    // Historical status IN_SERVICE
+    const resValid = await apiRequest('POST', '/assets/bulk-import', {
+      assets: [
+        {
+          name: 'In Service Asset',
+          assetNumber: 'AST-HIST-01',
+          serialNumber: 'SN-HIST-01',
+          category: 'Power Tools',
+          manufacturer: 'Hilti',
+          model: 'TE-30',
+          location: 'Shop',
+          purchaseDate: '2024-01-01',
+          purchasePrice: 500,
+          status: 'IN_SERVICE',
+        },
+      ],
+    });
+    assertEquals(resValid.data.importedCount, 1, 'IN_SERVICE status accepted');
+
+    // Invalid status
+    const resInvalid = await apiRequest('POST', '/assets/bulk-import', {
+      assets: [
+        {
+          name: 'Invalid Status Asset',
+          assetNumber: 'AST-HIST-02',
+          serialNumber: 'SN-HIST-02',
+          category: 'Power Tools',
+          manufacturer: 'Hilti',
+          model: 'TE-30',
+          location: 'Shop',
+          purchaseDate: '2024-01-01',
+          purchasePrice: 500,
+          status: 'TOTALLY_BOGUS_STATUS',
+        },
+      ],
+    });
+    assertEquals(resInvalid.data.importedCount, 0, 'Bogus status not imported');
+    assertEquals(resInvalid.data.skippedCount, 1, 'Bogus status skipped');
+    assert(resInvalid.data.errors[0].error.includes('Invalid status'), 'Error explains invalid status');
+  });
+
   // Close server
   server.close();
 
